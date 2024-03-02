@@ -142,6 +142,9 @@ def get_plex_servers() -> None:
         plex_servers = _get_servers()
         r.set(rkey, json.dumps(plex_servers))
         r.expire(rkey, int(REDIS_REFRESH_TTL / 3))
+        rq_queue.enqueue_in(
+            datetime.timedelta(hours=3), "rq_tasks.get_plex_servers", retry=rq.Retry(max=3, interval=[10, 30, 60])
+        )
     else:
         plex_servers = json.loads(r.get(rkey))
 
@@ -168,10 +171,6 @@ def get_plex_servers() -> None:
         rq_queue.enqueue(
             "rq_tasks.get_plex_libraries", retry=rq.Retry(max=3, interval=[10, 30, 60]), plex_server=plex_server
         )
-        rq_queue.enqueue_in(
-            datetime.timedelta(hours=3), "rq_tasks.get_plex_servers", retry=rq.Retry(max=3, interval=[10, 30, 60])
-        )
-
 
 def get_plex_libraries(plex_server: dict = None) -> None:
     query_params = {"X-Plex-Token": plex_server["token"]}

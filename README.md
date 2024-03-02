@@ -1,6 +1,6 @@
 # PLEX-reshare
 
-Combo of `openresty` + `python starlette` + `rq` to expose your Plex shares in a basic web-browsable `:8080`  format a'la apache directory listing.
+Combo of [openresty](https://openresty.org/) + [starlette](https://www.starlette.io/) + [rq](https://python-rq.org) to expose your Plex shares in a basic web-browsable `:8080`  format a'la apache directory listing.
 
 Mandatory: It requires access to an external redis instance
 
