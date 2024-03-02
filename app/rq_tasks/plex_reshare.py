@@ -5,6 +5,7 @@ import random
 import re
 import socket
 import string
+import time
 from urllib.parse import urlencode, urlparse
 
 import redis
@@ -94,18 +95,21 @@ def _get_servers() -> list[dict]:
                         )
 
                     uri = conn["uri"].split("://")[-1]
+                    node = uri.split(".")[1]
+                    ip = uri.split(".")[0].replace("-", ".")
+                    port = conn["port"]
+                    token = server["accessToken"]
 
                     if not servers.get(server["clientIdentifier"]) or custom_access:
                         servers[server["clientIdentifier"]] = {
-                            "node": uri.split(".")[1],
+                            "node": node,
                             "uri": uri,
-                            "ip": uri.split(".")[0].replace("-", "."),
-                            "port": conn["port"],
-                            "token": server["accessToken"],
+                            "ip": ip,
+                            "port": port,
+                            "token": token,
                         }
 
     return list(servers.values())
-
 
 def _get_common_path(paths: list) -> str:
     path_chunks = {}
@@ -120,6 +124,25 @@ def _get_common_path(paths: list) -> str:
 
     return f"{'/'.join(common_path)}"
 
+def _get_common_paths(paths: list) -> list:
+    common_paths = {}
+
+    for path in paths:
+        path_folders = path.split('/')[:-2]
+
+        while len(path_folders) > 0:
+            p = '/'.join(path_folders)
+            if not common_paths.get(p):
+                common_paths[p] = 1
+            else:
+                common_paths[p] += 1
+
+            path_folders.pop()
+
+    common_paths = [cp for cp, cpc in common_paths.items() if (cpc * 100)/len(paths) > 25]
+    common_paths.sort(key=lambda cp: len(cp.split("/")), reverse=True)
+
+    return common_paths
 
 # set dir structure in redis
 def _set_dir_structure(d, parent=""):
@@ -135,15 +158,16 @@ def _set_dir_structure(d, parent=""):
             r.set(key, v)
             r.expire(key, REDIS_PATH_TTL)
 
-
 def get_plex_servers() -> None:
+    time.sleep(random.randint(1, 10))
     rkey = "pr:servers"
     if not r.exists(rkey):
         plex_servers = _get_servers()
         r.set(rkey, json.dumps(plex_servers))
         r.expire(rkey, int(REDIS_REFRESH_TTL / 3))
         rq_queue.enqueue_in(
-            datetime.timedelta(hours=3), "rq_tasks.get_plex_servers", retry=rq.Retry(max=3, interval=[10, 30, 120])
+            datetime.timedelta(seconds=int(REDIS_REFRESH_TTL / 3 + 60)),
+            "rq_tasks.get_plex_servers", retry=rq.Retry(max=3, interval=[10, 30, 120])
         )
     else:
         plex_servers = json.loads(r.get(rkey))
@@ -155,7 +179,7 @@ def get_plex_servers() -> None:
         rkey_node_token = f"pr:node:{plex_server['node']}:token"
 
         # no need to refresh
-        if r.get(rkey_node_refresh):
+        if r.exists(rkey_node_refresh):
             continue
 
         r.set(rkey_node_refresh, str(datetime.datetime.now()))
@@ -190,7 +214,6 @@ def get_plex_libraries(plex_server: dict = None) -> None:
                 offset=0,
             )
 
-
 def get_plex_library(
     plex_server: dict = None,
     library: dict = None,
@@ -213,14 +236,13 @@ def get_plex_library(
     if media_container["size"] + media_container["offset"] < media_container["totalSize"]:
         offset += 100
         rq_queue.enqueue_in(
-            datetime.timedelta(seconds=random.randint(5, 120)),
+            datetime.timedelta(seconds=offset/(10 if library['type'] == "show" else 50)),
             "rq_tasks.get_plex_library",
             retry=rq.Retry(max=3, interval=[10, 30, 120]),
             plex_server=plex_server,
             library=library,
             offset=offset,
         )
-
 
 def get_movies(media_container: dict = None, plex_server: dict = None) -> None:
     movies_list = {}
@@ -265,7 +287,7 @@ def get_movies(media_container: dict = None, plex_server: dict = None) -> None:
                     )
                 )
 
-                movies_list[movie_key] = "/".join(movie_path) + f"#{movie['title']} ({movie.get('year')})"
+                movies_list[movie_key] = "/".join(movie_path) + f"#{movie['title']} ({movie.get('year')})".replace(" (None)", "")
 
     rkey_movies = f"pr:movies:{plex_server['node']}"
     if r.exists(rkey_movies):
@@ -283,7 +305,6 @@ def get_movies(media_container: dict = None, plex_server: dict = None) -> None:
         plex_server=plex_server,
     )
 
-
 def process_movies(media_container: dict = None, plex_server: dict = None) -> None:
     movies = {}
     movies_list = {}
@@ -291,19 +312,24 @@ def process_movies(media_container: dict = None, plex_server: dict = None) -> No
     rkey_movies = f"pr:movies:{plex_server['node']}"
     if r.exists(rkey_movies):
         movies_list = r.hgetall(rkey_movies)
-    base_path = _get_common_path(list(movies_list.values()))
 
-    for key in r.scan_iter(f"/movies/{plex_server['node']}/*"):
-        r.delete(key)
+    base_paths = _get_common_paths(list(movies_list.values()))
 
-    for key in r.sscan_iter(f"/movies/{plex_server['node']}/*"):
-        r.delete(key)
+    keys = (
+        list(r.scan_iter(f"/movies/{plex_server['node']}/*")) +
+        list(r.sscan_iter(f"/movies/{plex_server['node']}/*"))
+    )
+    if len(keys) > 0:
+        r.delete(*keys)
 
     for movie_key, movie_name in movies_list.items():
         movie_base_placeholder = movie_name.split("#")[-1]
 
         movie_name = movie_name.split("#")[0]
-        movie_name = movie_name.replace(base_path, "").strip("/")
+
+        for base_path in base_paths:
+            movie_name = re.sub(rf"^{base_path}", '', movie_name).lstrip("/")
+
         movie_path = list(filter(None, movie_name.split("/")))
         movie_file = movie_path[-1]
 
@@ -326,19 +352,16 @@ def process_movies(media_container: dict = None, plex_server: dict = None) -> No
                 DynamicAccessNestedDict(movies).setval(movie_path[:-1], d_files)
 
     _set_dir_structure({"movies": {plex_server["node"]: movies}})
-    # return movies
-
 
 def get_shows(media_container: dict = None, plex_server: dict = None) -> None:
-    for show in media_container["Metadata"]:
+    for sid, show in enumerate(media_container["Metadata"]):
         rq_queue.enqueue_in(
-            datetime.timedelta(seconds=random.randint(5, 180)),
+            datetime.timedelta(seconds=sid * 5),
             "rq_tasks.get_seasons",
             retry=rq.Retry(max=3, interval=[10, 30, 120]),
             show=show,
             plex_server=plex_server,
         )
-
 
 def get_seasons(show: dict = None, plex_server: dict = None):
     query_params = {
@@ -355,15 +378,14 @@ def get_seasons(show: dict = None, plex_server: dict = None):
         headers=HEADERS,
     )
 
-    for season in seasons.json()["MediaContainer"]["Metadata"]:
+    for sid, season in enumerate(seasons.json()["MediaContainer"]["Metadata"]):
         rq_queue.enqueue_in(
-            datetime.timedelta(seconds=random.randint(5, 600)),
+            datetime.timedelta(seconds=sid * 10),
             "rq_tasks.get_episodes",
             retry=rq.Retry(max=3, interval=[10, 30, 120]),
             season=season,
             plex_server=plex_server,
         )
-
 
 def get_episodes(season: dict = None, plex_server: dict = None, offset: int = 0) -> None:
     episode_list = {}
@@ -419,7 +441,7 @@ def get_episodes(season: dict = None, plex_server: dict = None, offset: int = 0)
     if media_container["size"] + media_container["offset"] < media_container["totalSize"]:
         offset += 100
         rq_queue.enqueue_in(
-            datetime.timedelta(seconds=random.randint(5, 360)),
+            datetime.timedelta(seconds=offset / 5),
             "rq_tasks.get_episodes",
             retry=rq.Retry(max=3, interval=[10, 30, 120]),
             season=season,
@@ -434,23 +456,24 @@ def get_episodes(season: dict = None, plex_server: dict = None, offset: int = 0)
         plex_server=plex_server,
     )
 
-
 def process_episodes(plex_server: dict = None) -> None:
     shows = {}
     episode_list = {}
     rkey_shows = f"pr:shows:{plex_server['node']}"
     if r.exists(rkey_shows):
         episode_list = r.hgetall(rkey_shows)
-    base_path = _get_common_path(list(episode_list.values()))
+    base_paths = _get_common_paths(list(episode_list.values()))
 
-    for key in r.scan_iter(f"/shows/{plex_server['node']}/*"):
-        r.delete(key)
-
-    for key in r.sscan_iter(f"/shows/{plex_server['node']}/*"):
-        r.delete(key)
+    keys = (
+        list(r.sscan_iter(f"/shows/{plex_server['node']}/*")) +
+        list(r.scan_iter(f"/shows/{plex_server['node']}/*"))
+    )
+    if len(keys) > 0:
+        r.delete(*keys)
 
     for episode_key, episode_name in episode_list.items():
-        episode_name = episode_name.replace(base_path, "").strip("/")
+        for base_path in base_paths:
+            episode_name = re.sub(rf"^{base_path}", '', episode_name).lstrip("/")
         episode_path = list(filter(None, episode_name.split("/")))
 
         # no root file or 1st ones
