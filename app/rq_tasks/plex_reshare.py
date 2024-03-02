@@ -143,7 +143,7 @@ def get_plex_servers() -> None:
         r.set(rkey, json.dumps(plex_servers))
         r.expire(rkey, int(REDIS_REFRESH_TTL / 3))
         rq_queue.enqueue_in(
-            datetime.timedelta(hours=3), "rq_tasks.get_plex_servers", retry=rq.Retry(max=3, interval=[10, 30, 60])
+            datetime.timedelta(hours=3), "rq_tasks.get_plex_servers", retry=rq.Retry(max=3, interval=[10, 30, 120])
         )
     else:
         plex_servers = json.loads(r.get(rkey))
@@ -169,7 +169,7 @@ def get_plex_servers() -> None:
         r.set(rkey_node_token, plex_server["token"])
 
         rq_queue.enqueue(
-            "rq_tasks.get_plex_libraries", retry=rq.Retry(max=3, interval=[10, 30, 60]), plex_server=plex_server
+            "rq_tasks.get_plex_libraries", retry=rq.Retry(max=3, interval=[10, 30, 120]), plex_server=plex_server
         )
 
 def get_plex_libraries(plex_server: dict = None) -> None:
@@ -184,7 +184,7 @@ def get_plex_libraries(plex_server: dict = None) -> None:
         if library["type"] in ["movie", "show"]:
             rq_queue.enqueue(
                 "rq_tasks.get_plex_library",
-                retry=rq.Retry(max=3, interval=[10, 30, 60]),
+                retry=rq.Retry(max=3, interval=[10, 30, 120]),
                 plex_server=plex_server,
                 library=library,
                 offset=0,
@@ -213,9 +213,9 @@ def get_plex_library(
     if media_container["size"] + media_container["offset"] < media_container["totalSize"]:
         offset += 100
         rq_queue.enqueue_in(
-            datetime.timedelta(seconds=random.randint(5, 60)),
+            datetime.timedelta(seconds=random.randint(5, 120)),
             "rq_tasks.get_plex_library",
-            retry=rq.Retry(max=3, interval=[10, 30, 60]),
+            retry=rq.Retry(max=3, interval=[10, 30, 120]),
             plex_server=plex_server,
             library=library,
             offset=offset,
@@ -272,21 +272,25 @@ def get_movies(media_container: dict = None, plex_server: dict = None) -> None:
         existing_movies_list = r.hgetall(rkey_movies)
         movies_list.update(existing_movies_list)
 
-    r.hmset(rkey_movies, movies_list)
-    r.expire(rkey_movies, 10 * 60)
+    if len(movies_list):
+        r.hmset(rkey_movies, movies_list)
+        r.expire(rkey_movies, 10 * 60)
 
     rq_queue.enqueue_in(
         datetime.timedelta(seconds=5),
         "rq_tasks.process_movies",
-        retry=rq.Retry(max=3, interval=[10, 30, 60]),
+        retry=rq.Retry(max=3, interval=[10, 30, 120]),
         plex_server=plex_server,
     )
 
 
 def process_movies(media_container: dict = None, plex_server: dict = None) -> None:
     movies = {}
+    movies_list = {}
+
     rkey_movies = f"pr:movies:{plex_server['node']}"
-    movies_list = r.hgetall(rkey_movies)
+    if r.exists(rkey_movies):
+        movies_list = r.hgetall(rkey_movies)
     base_path = _get_common_path(list(movies_list.values()))
 
     for key in r.scan_iter(f"/movies/{plex_server['node']}/*"):
@@ -328,9 +332,9 @@ def process_movies(media_container: dict = None, plex_server: dict = None) -> No
 def get_shows(media_container: dict = None, plex_server: dict = None) -> None:
     for show in media_container["Metadata"]:
         rq_queue.enqueue_in(
-            datetime.timedelta(seconds=random.randint(5, 120)),
+            datetime.timedelta(seconds=random.randint(5, 180)),
             "rq_tasks.get_seasons",
-            retry=rq.Retry(max=3, interval=[10, 30, 60]),
+            retry=rq.Retry(max=3, interval=[10, 30, 120]),
             show=show,
             plex_server=plex_server,
         )
@@ -353,9 +357,9 @@ def get_seasons(show: dict = None, plex_server: dict = None):
 
     for season in seasons.json()["MediaContainer"]["Metadata"]:
         rq_queue.enqueue_in(
-            datetime.timedelta(seconds=random.randint(5, 300)),
+            datetime.timedelta(seconds=random.randint(5, 600)),
             "rq_tasks.get_episodes",
-            retry=rq.Retry(max=3, interval=[10, 30, 60]),
+            retry=rq.Retry(max=3, interval=[10, 30, 120]),
             season=season,
             plex_server=plex_server,
         )
@@ -408,32 +412,35 @@ def get_episodes(season: dict = None, plex_server: dict = None, offset: int = 0)
         existing_episodes_list = r.hgetall(rkey_shows)
         episode_list.update(existing_episodes_list)
 
-    r.hmset(rkey_shows, episode_list)
-    r.expire(rkey_shows, 10 * 60)
+    if len(episode_list):
+        r.hmset(rkey_shows, episode_list)
+        r.expire(rkey_shows, 10 * 60)
 
     if media_container["size"] + media_container["offset"] < media_container["totalSize"]:
         offset += 100
         rq_queue.enqueue_in(
-            datetime.timedelta(seconds=random.randint(5, 300)),
+            datetime.timedelta(seconds=random.randint(5, 360)),
             "rq_tasks.get_episodes",
-            retry=rq.Retry(max=3, interval=[10, 30, 60]),
+            retry=rq.Retry(max=3, interval=[10, 30, 120]),
             season=season,
             plex_server=plex_server,
             offset=offset,
         )
 
     rq_queue.enqueue_in(
-        datetime.timedelta(seconds=random.randint(5, 300)),
+        datetime.timedelta(seconds=random.randint(5, 1200)),
         "rq_tasks.process_episodes",
-        retry=rq.Retry(max=3, interval=[10, 30, 60]),
+        retry=rq.Retry(max=3, interval=[10, 30, 120]),
         plex_server=plex_server,
     )
 
 
 def process_episodes(plex_server: dict = None) -> None:
     shows = {}
+    episode_list = {}
     rkey_shows = f"pr:shows:{plex_server['node']}"
-    episode_list = r.hgetall(rkey_shows)
+    if r.exists(rkey_shows):
+        episode_list = r.hgetall(rkey_shows)
     base_path = _get_common_path(list(episode_list.values()))
 
     for key in r.scan_iter(f"/shows/{plex_server['node']}/*"):
@@ -445,11 +452,12 @@ def process_episodes(plex_server: dict = None) -> None:
     for episode_key, episode_name in episode_list.items():
         episode_name = episode_name.replace(base_path, "").strip("/")
         episode_path = list(filter(None, episode_name.split("/")))
-        episode_file = episode_path[-1]
 
         # no root file or 1st ones
-        if len(episode_path) == 1:
+        if len(episode_path) <= 1:
             continue
+
+        episode_file = episode_path[-1]
 
         node = shows
         for idx, level in enumerate(episode_path):
