@@ -1,24 +1,24 @@
-import os
-import redis
-import random
-import string
-import requests
-import socket
-import json
-import rq
-import re
 import datetime
+import json
+import os
+import random
+import re
+import socket
+import string
 from urllib.parse import urlencode, urlparse
 
+import redis
+import requests
+import rq
 from starlette.config import Config
 
 config = Config()  # env_prefix='APP_'
-PLEX_TOKEN = config('PLEX_TOKEN', cast=str, default="")
+PLEX_TOKEN = config("PLEX_TOKEN", cast=str, default="")
 REDIS_REFRESH_TTL = 3 * 60 * 60
 REDIS_PATH_TTL = 48 * 60 * 60
 IGNORE_EXTENSIONS = ["avi", None]
 IGNORE_RESOLUTIONS = ["sd", None]
-IGNORE_MOVIE_TEMPLATES = [r'^\d{2}\s.*\.\w{3,4}$']
+IGNORE_MOVIE_TEMPLATES = [r"^\d{2}\s.*\.\w{3,4}$"]
 HEADERS = {
     "Accept": "application/json",
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15"
@@ -26,16 +26,17 @@ HEADERS = {
 }
 
 r = redis.Redis(
-    host=config('REDIS_HOST', default="redis"),
-    port=config('REDIS_PORT', cast=int, default=6379),
-    db=11, decode_responses=True
+    host=config("REDIS_HOST", default="redis"),
+    port=config("REDIS_PORT", cast=int, default=6379),
+    db=11,
+    decode_responses=True,
 )
 rq_redis = redis.Redis(
-    host=config('REDIS_HOST', default="redis"),
-    port=config('REDIS_PORT', cast=int, default=6379),
-    db=config('REDIS_DB_RQ', cast=int, default=11),
+    host=config("REDIS_HOST", default="redis"),
+    port=config("REDIS_PORT", cast=int, default=6379),
+    db=config("REDIS_DB_RQ", cast=int, default=11),
 )
-rq_queue = rq.Queue(name='default', connection=rq_redis)
+rq_queue = rq.Queue(name="default", connection=rq_redis)
 
 
 class DynamicAccessNestedDict:
@@ -64,9 +65,7 @@ def _get_servers() -> list[dict]:
         "includeRelay": 0,
         "includeIPv6": 0,
         "X-Plex-Client-Identifier": "".join(
-            random.choices(
-                string.ascii_uppercase + string.ascii_lowercase + string.digits, k=24
-            )
+            random.choices(string.ascii_uppercase + string.ascii_lowercase + string.digits, k=24)
         ),
         "X-Plex-Platform-Version": "16.6",
         "X-Plex-Token": PLEX_TOKEN,
@@ -80,25 +79,19 @@ def _get_servers() -> list[dict]:
     servers = {}
     for server in req.json():
         if not server["owned"] and server["provides"] == "server":
-
-
             for conn in server["connections"]:
                 if not conn["relay"] and not conn["local"] and not conn["IPv6"]:
                     custom_access = False
                     if "plex.direct" not in conn["uri"]:
                         custom_access = True
 
-                        s = [
-                            c
-                            for c in server["connections"]
-                            if "plex.direct" in c["uri"]
-                        ]
+                        s = [c for c in server["connections"] if "plex.direct" in c["uri"]]
 
                         url = urlparse(conn["uri"])
                         server_ip = socket.gethostbyname(url.netloc.split(":")[0])
-                        conn[
-                            "uri"
-                        ] = f"{server_ip.replace('.', '-')}.{s[0]['uri'].split('.')[1]}.plex.direct:{conn['port']}"
+                        conn["uri"] = (
+                            f"{server_ip.replace('.', '-')}.{s[0]['uri'].split('.')[1]}.plex.direct:{conn['port']}"
+                        )
 
                     uri = conn["uri"].split("://")[-1]
 
@@ -172,9 +165,13 @@ def get_plex_servers() -> None:
         r.set(rkey_node_port, str(plex_server["port"]))
         r.set(rkey_node_token, plex_server["token"])
 
-        rq_queue.enqueue('rq_tasks.get_plex_libraries', retry=rq.Retry(max=3, interval=[10, 30, 60]), plex_server=plex_server)
-        rq_queue.enqueue_in(datetime.timedelta(hours=3),
-            'rq_tasks.get_plex_servers', retry=rq.Retry(max=3, interval=[10, 30, 60]))
+        rq_queue.enqueue(
+            "rq_tasks.get_plex_libraries", retry=rq.Retry(max=3, interval=[10, 30, 60]), plex_server=plex_server
+        )
+        rq_queue.enqueue_in(
+            datetime.timedelta(hours=3), "rq_tasks.get_plex_servers", retry=rq.Retry(max=3, interval=[10, 30, 60])
+        )
+
 
 def get_plex_libraries(plex_server: dict = None) -> None:
     query_params = {"X-Plex-Token": plex_server["token"]}
@@ -186,10 +183,20 @@ def get_plex_libraries(plex_server: dict = None) -> None:
 
     for library in libraries.json()["MediaContainer"]["Directory"]:
         if library["type"] in ["movie", "show"]:
-            rq_queue.enqueue('rq_tasks.get_plex_library', retry=rq.Retry(max=3, interval=[10, 30, 60]),
-                plex_server = plex_server, library = library, offset = 0)
+            rq_queue.enqueue(
+                "rq_tasks.get_plex_library",
+                retry=rq.Retry(max=3, interval=[10, 30, 60]),
+                plex_server=plex_server,
+                library=library,
+                offset=0,
+            )
 
-def get_plex_library(plex_server: dict = None, library: dict = None, offset: int = None, ) -> None:
+
+def get_plex_library(
+    plex_server: dict = None,
+    library: dict = None,
+    offset: int = None,
+) -> None:
     query_params = {
         "X-Plex-Token": plex_server["token"],
         "X-Plex-Container-Start": offset,
@@ -204,14 +211,17 @@ def get_plex_library(plex_server: dict = None, library: dict = None, offset: int
     media_container = library_res.json()["MediaContainer"]
     rq_queue.enqueue(f"rq_tasks.get_{library['type']}s", media_container=media_container, plex_server=plex_server)
 
-    if (
-        media_container["size"] + media_container["offset"]
-        < media_container["totalSize"]
-    ):
+    if media_container["size"] + media_container["offset"] < media_container["totalSize"]:
         offset += 100
-        rq_queue.enqueue_in(datetime.timedelta(seconds=random.randint(5,60)),
-            'rq_tasks.get_plex_library', retry=rq.Retry(max=3, interval=[10, 30, 60]),
-            plex_server = plex_server, library = library, offset = offset)
+        rq_queue.enqueue_in(
+            datetime.timedelta(seconds=random.randint(5, 60)),
+            "rq_tasks.get_plex_library",
+            retry=rq.Retry(max=3, interval=[10, 30, 60]),
+            plex_server=plex_server,
+            library=library,
+            offset=offset,
+        )
+
 
 def get_movies(media_container: dict = None, plex_server: dict = None) -> None:
     movies_list = {}
@@ -256,7 +266,7 @@ def get_movies(media_container: dict = None, plex_server: dict = None) -> None:
                     )
                 )
 
-                movies_list[movie_key] = '/'.join(movie_path) + f"#{movie['title']} ({movie.get('year')})"
+                movies_list[movie_key] = "/".join(movie_path) + f"#{movie['title']} ({movie.get('year')})"
 
     rkey_movies = f"pr:movies:{plex_server['node']}"
     if r.exists(rkey_movies):
@@ -266,9 +276,13 @@ def get_movies(media_container: dict = None, plex_server: dict = None) -> None:
     r.hmset(rkey_movies, movies_list)
     r.expire(rkey_movies, 10 * 60)
 
-    rq_queue.enqueue_in(datetime.timedelta(seconds=5),
-        'rq_tasks.process_movies', retry=rq.Retry(max=3, interval=[10, 30, 60]),
-         plex_server=plex_server)
+    rq_queue.enqueue_in(
+        datetime.timedelta(seconds=5),
+        "rq_tasks.process_movies",
+        retry=rq.Retry(max=3, interval=[10, 30, 60]),
+        plex_server=plex_server,
+    )
+
 
 def process_movies(media_container: dict = None, plex_server: dict = None) -> None:
     movies = {}
@@ -283,7 +297,6 @@ def process_movies(media_container: dict = None, plex_server: dict = None) -> No
         r.delete(key)
 
     for movie_key, movie_name in movies_list.items():
-        # print(movie_name, base_path)
         movie_base_placeholder = movie_name.split("#")[-1]
 
         movie_name = movie_name.split("#")[0]
@@ -297,13 +310,10 @@ def process_movies(media_container: dict = None, plex_server: dict = None) -> No
 
         node = movies
         for idx, level in enumerate(movie_path):
-
             if idx < len(movie_path) - 1:
                 node = node.setdefault(level, dict())
             else:
-                d_files = DynamicAccessNestedDict(movies).getval(
-                    movie_path[:-1]
-                )
+                d_files = DynamicAccessNestedDict(movies).getval(movie_path[:-1])
 
                 if d_files:
                     d_files.update({movie_file: movie_key})
@@ -315,11 +325,17 @@ def process_movies(media_container: dict = None, plex_server: dict = None) -> No
     _set_dir_structure({"movies": {plex_server["node"]: movies}})
     # return movies
 
+
 def get_shows(media_container: dict = None, plex_server: dict = None) -> None:
     for show in media_container["Metadata"]:
-        rq_queue.enqueue_in(datetime.timedelta(seconds=random.randint(5,120)),
-            'rq_tasks.get_seasons', retry=rq.Retry(max=3, interval=[10, 30, 60]),
-            show=show, plex_server=plex_server)
+        rq_queue.enqueue_in(
+            datetime.timedelta(seconds=random.randint(5, 120)),
+            "rq_tasks.get_seasons",
+            retry=rq.Retry(max=3, interval=[10, 30, 60]),
+            show=show,
+            plex_server=plex_server,
+        )
+
 
 def get_seasons(show: dict = None, plex_server: dict = None):
     query_params = {
@@ -338,9 +354,13 @@ def get_seasons(show: dict = None, plex_server: dict = None):
 
     for season in seasons.json()["MediaContainer"]["Metadata"]:
         rq_queue.enqueue_in(
-            datetime.timedelta(seconds=random.randint(5,300)),
-            'rq_tasks.get_episodes', retry=rq.Retry(max=3, interval=[10, 30, 60]),
-            season=season, plex_server=plex_server)
+            datetime.timedelta(seconds=random.randint(5, 300)),
+            "rq_tasks.get_episodes",
+            retry=rq.Retry(max=3, interval=[10, 30, 60]),
+            season=season,
+            plex_server=plex_server,
+        )
+
 
 def get_episodes(season: dict = None, plex_server: dict = None, offset: int = 0) -> None:
     episode_list = {}
@@ -382,7 +402,7 @@ def get_episodes(season: dict = None, plex_server: dict = None, offset: int = 0)
                     continue
 
                 episode_path = list(filter(None, episode_name.split("/")))
-                episode_list[episode_key] = '/'.join(episode_path)
+                episode_list[episode_key] = "/".join(episode_path)
 
     rkey_shows = f"pr:shows:{plex_server['node']}"
     if r.exists(rkey_shows):
@@ -392,19 +412,24 @@ def get_episodes(season: dict = None, plex_server: dict = None, offset: int = 0)
     r.hmset(rkey_shows, episode_list)
     r.expire(rkey_shows, 10 * 60)
 
-    if (
-        media_container["size"] + media_container["offset"]
-        < media_container["totalSize"]
-    ):
+    if media_container["size"] + media_container["offset"] < media_container["totalSize"]:
         offset += 100
         rq_queue.enqueue_in(
-                datetime.timedelta(seconds=random.randint(5,300)),
-                'rq_tasks.get_episodes', retry=rq.Retry(max=3, interval=[10, 30, 60]),
-                season=season, plex_server=plex_server, offset = offset)
+            datetime.timedelta(seconds=random.randint(5, 300)),
+            "rq_tasks.get_episodes",
+            retry=rq.Retry(max=3, interval=[10, 30, 60]),
+            season=season,
+            plex_server=plex_server,
+            offset=offset,
+        )
 
-    rq_queue.enqueue_in(datetime.timedelta(seconds=random.randint(5,300)),
-        'rq_tasks.process_episodes', retry=rq.Retry(max=3, interval=[10, 30, 60]),
-         plex_server=plex_server)
+    rq_queue.enqueue_in(
+        datetime.timedelta(seconds=random.randint(5, 300)),
+        "rq_tasks.process_episodes",
+        retry=rq.Retry(max=3, interval=[10, 30, 60]),
+        plex_server=plex_server,
+    )
+
 
 def process_episodes(plex_server: dict = None) -> None:
     shows = {}

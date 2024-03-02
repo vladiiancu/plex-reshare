@@ -1,4 +1,10 @@
 [tool.ruff]
+line-length = 119
+target-version = "py310"
+
+exclude = ["migrations", "venv", "tests", "test_*", ".astro"]
+
+[tool.ruff.lint]
 select = [
     "E",  # pycodestyle errors
     "W",  # pycodestyle warnings
@@ -9,12 +15,7 @@ select = [
 #    "UP",  # pyupgrade
 ]
 
-line-length = 119
-target-version = "py310"
-
-exclude = ["migrations", "venv", "tests", "test_*", ".astro"]
-
-[tool.ruff.isort]
+[tool.ruff.lint.isort]
 combine-as-imports = true
 known-first-party = ["dags", "models", "api"]
 

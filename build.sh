@@ -1,4 +1,4 @@
-VERSION="0.0.1"
+VERSION="0.1.0"
 
 #build openresty + python
 curl -s https://raw.githubusercontent.com/openresty/docker-openresty/master/bullseye/Dockerfile | docker build \
@@ -12,7 +12,10 @@ FROM myopenresty
 
 RUN apt-get update && apt-get install -y supervisor
 
-ENV REDIS_DB=11
+ENV REDIS_HOST=redis
+ENV REDIS_PORT=6379
+ENV REDIS_DB_RQ=11
+ENV PYTHONPATH=/app
 
 COPY /app/requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
@@ -32,13 +35,6 @@ COPY ./app /app
 # COPY ./rq /rq
 WORKDIR /app/
 
-ENV PYTHONPATH=/app
-
-# EXPOSE 8080
-
-# Run the start script, it will check for an /app/prestart.sh script (e.g. for migrations)
-# And then will start Gunicorn with Uvicorn
-# CMD ["/start.sh"]
 CMD ["/usr/bin/supervisord"]
 EOL
 ) | docker build --no-cache -t peterbuga/plex-reshare:latest -t "peterbuga/plex-reshare:${VERSION}" -f - .
@@ -46,5 +42,5 @@ EOL
 # cleanup
 docker rmi myopenresty
 
-# docker push "peterbuga/plex-reshare:latest"
-# docker push "peterbuga/plex-reshare:${VERSION}"
+docker push "peterbuga/plex-reshare:latest"
+docker push "peterbuga/plex-reshare:${VERSION}"
