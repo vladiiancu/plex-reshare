@@ -28,6 +28,11 @@ REDIS_DB_RQ: 11 (redis db for rq)
 By default it'll use redis db #11.
 
 
+# Rclone mount
+
+More details here https://rclone.org/http/ but I recommand using flags `--transfers 4 --low-level-retries 7 --retries 7 --tpslimit 0.7 ` to limit the access to API and files, otherwise plex scan will hammer the requests on target libraries
+
+
 ### Development
 
 Linting: pip install ruff==0.3.0
