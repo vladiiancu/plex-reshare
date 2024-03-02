@@ -1,6 +1,6 @@
 #!/bin/bash
 
-VERSION="0.1.0"
+VERSION=${VERSION:-latest}
 
 #build openresty + python
 curl -s https://raw.githubusercontent.com/openresty/docker-openresty/master/bullseye/Dockerfile | docker build \
@@ -39,10 +39,15 @@ WORKDIR /app/
 
 CMD ["/usr/bin/supervisord"]
 EOL
-) | docker build --no-cache -t peterbuga/plex-reshare:latest -t "peterbuga/plex-reshare:${VERSION}" -f - .
+) | docker build --no-cache -t "peterbuga/plex-reshare:${VERSION}" -f - .
 
 # cleanup
 docker rmi myopenresty
 
-docker push "peterbuga/plex-reshare:latest"
 docker push "peterbuga/plex-reshare:${VERSION}"
+
+if [ "$VERSION" != "latest" ]; then
+	docker image tag "peterbuga/plex-reshare:${VERSION}" "peterbuga/plex-reshare:latest"
+	docker push "peterbuga/plex-reshare:latest"
+fi
+
