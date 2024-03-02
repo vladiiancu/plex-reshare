@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>/</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  </head>
+  <body>
+    <main>
+      <div class="listing">
+        <table aria-describedby="summary">
+          <thead>
+          <tr>
+            <th>
+              <span>Name</span>
+            </th>
+          </tr>
+          </thead>
+          <tbody>
+            {% for path in paths %}
+              <tr class="file">
+                <td>
+                  <a href="{{ path.url }}">
+                    <span class="name">{{ path.name }}</span>
+                  </a>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </main>
+  </body>
+</html>

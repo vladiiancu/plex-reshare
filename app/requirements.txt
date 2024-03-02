@@ -1,0 +1,10 @@
+aiofiles
+jinja2
+requests
+redis
+
+uvicorn[standard]==0.20.0
+gunicorn==20.1.0
+starlette==0.27.0
+
+rq==1.16.0

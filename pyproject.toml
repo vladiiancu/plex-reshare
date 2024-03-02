@@ -1,0 +1,22 @@
+[tool.ruff]
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+#    "C",  # flake8-comprehensions
+#    "B",  # flake8-bugbear
+#    "UP",  # pyupgrade
+]
+
+line-length = 119
+target-version = "py310"
+
+exclude = ["migrations", "venv", "tests", "test_*", ".astro"]
+
+[tool.ruff.isort]
+combine-as-imports = true
+known-first-party = ["dags", "models", "api"]
+
+[pycodestyle]
+max-line-length = 119

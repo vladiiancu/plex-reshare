@@ -1,0 +1,77 @@
+---
+version: "3.9"
+
+name: "plex-reshare"
+
+volumes:
+  redis:
+    name: "redis"
+    driver: "local"
+
+services:
+  redis:
+    image: "redis:7.2.4-alpine"
+    container_name: "redis"
+    hostname: "redis"
+    restart: "unless-stopped"
+    healthcheck:
+      disable: true
+    labels:
+      com.centurylinklabs.watchtower.enable: true
+      wud.watch: true
+      wud.watch.digest: true
+      wud.tag.include: "^\\d+\\.\\d+\\.\\d+-alpine$$"
+    environment:
+      TZ: "Europe/Bucharest"
+    volumes: ["redis:/data"]
+    ports:
+      - 6379:6379
+    networks:
+      plexreshare:
+        aliases: ["redis"]
+
+  plex_reshare:
+    image: "peterbuga/plex-reshare:latest"
+    container_name: "plex_reshare"
+    hostname: "plex_reshare"
+    restart: "unless-stopped"
+    environment:
+      # starlette
+      WORKERS_PER_CORE: 5
+      MAX_WORKERS: 50
+      WEB_CONCURRENCY: 10
+      GRACEFUL_TIMEOUT: 1200
+      TIMEOUT: 1300
+      PORT: 8000
+
+      # nginx
+      REDIS_HOST: "redis"
+      REDIS_PORT: 6379
+      REDIS_DB_RQ: 12
+
+      PLEX_TOKEN: "xxxxxxxxxxxxxxxxxxxx"
+    ports:
+      - 8080:8080
+      - 8000:8000
+    logging:
+      options:
+        max-size: "5m"
+    labels:
+      com.centurylinklabs.watchtower.enable: false
+      wud.watch: false
+
+    # enable for development
+    # volumes:
+    #   - "./app:/app"
+    #   - "./nginx/nginx.conf:/usr/local/openresty/nginx/conf/nginx.conf:ro"
+    #   - "./nginx/nginx.vh.default.conf:/etc/nginx/conf.d/default.conf:ro"
+    #   - "./supervisord.conf:/etc/supervisor/conf.d/supervisord.conf"
+    networks:
+      plexreshare:
+        aliases: ["plex_reshare"]
+
+networks:
+  plexreshare:
+    name: "plexreshare"
+    driver: "bridge"
+    enable_ipv6: false
