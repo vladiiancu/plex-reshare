@@ -1,3 +1,5 @@
+#!/bin/bash
+
 VERSION="0.1.0"
 
 #build openresty + python
