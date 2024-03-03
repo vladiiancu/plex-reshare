@@ -62,11 +62,11 @@ class DynamicAccessNestedDict:
 
 
 def _get_max_files() -> int:
-    date_start = config("DATE_START", cast=str, default="")
+    date_start = config("DATE_START", cast=str, default=None)
     files_day = config("FILES_DAY", cast=int, default=25)
 
     if not date_start:
-        return 1_000_000
+        return 100_000_000
     else:
         date_start = datetime.datetime.strptime(date_start, "%Y-%m-%d")
         date_now = datetime.datetime.now()
@@ -123,20 +123,6 @@ def _get_servers() -> list[dict]:
                         }
 
     return list(servers.values())
-
-
-def _get_common_path(paths: list) -> str:
-    path_chunks = {}
-    for path in [p.strip("/") for p in paths]:
-        for p in path.split("/"):
-            if not path_chunks.get(p):
-                path_chunks[p] = 1
-            else:
-                path_chunks[p] += 1
-
-    common_path = [p for p, n in path_chunks.items() if n == max(path_chunks.values())]
-
-    return f"{'/'.join(common_path)}"
 
 
 def _get_common_paths(paths: list) -> list:
@@ -356,7 +342,7 @@ def process_movies(media_container: dict = None, plex_server: dict = None) -> No
 
     base_paths = _get_common_paths(list(movies_list.values()))
 
-    for movie_key, movie_name in movies_list.items():
+    for movie_key, movie_name in movies_list.items()[:_get_max_files()]:
         movie_base_placeholder = movie_name.split("#")[-1]
 
         movie_name = movie_name.split("#")[0]
@@ -517,7 +503,7 @@ def process_episodes(plex_server: dict = None) -> None:
         episode_list = r.hgetall(rkey_shows)
     base_paths = _get_common_paths(list(episode_list.values()))
 
-    for episode_key, episode_name in episode_list.items():
+    for episode_key, episode_name in episode_list.items()[:_get_max_files()]:
         for base_path in base_paths:
             episode_name = re.sub(rf"^{base_path}", "", episode_name).lstrip("/")
         episode_path = list(filter(None, episode_name.split("/")))
