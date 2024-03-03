@@ -37,7 +37,9 @@ class SetPlexServersMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
 
     async def dispatch(self, request, call_next):
-        rq_queue.enqueue("rq_tasks.get_plex_servers", job_id='get_plex_servers', retry=rq.Retry(max=3, interval=[10, 30, 60]))
+        rq_queue.enqueue(
+            "rq_tasks.get_plex_servers", job_id="get_plex_servers", retry=rq.Retry(max=3, interval=[10, 30, 60])
+        )
 
         response = await call_next(request)
         return response
@@ -71,7 +73,9 @@ async def home(request):
 
 async def startup(*args, **kwargs):
     r.flushdb()
-    rq_queue.enqueue("rq_tasks.get_plex_servers", job_id='get_plex_servers', retry=rq.Retry(max=3, interval=[10, 30, 60]))
+    rq_queue.enqueue(
+        "rq_tasks.get_plex_servers", job_id="get_plex_servers", retry=rq.Retry(max=3, interval=[10, 30, 60])
+    )
 
 
 routes = [
