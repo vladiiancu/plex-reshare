@@ -6,6 +6,7 @@ import re
 import socket
 import string
 import time
+import itertools
 from urllib.parse import urlencode, urlparse
 
 import redis
@@ -342,7 +343,7 @@ def process_movies(media_container: dict = None, plex_server: dict = None) -> No
 
     base_paths = _get_common_paths(list(movies_list.values()))
 
-    for movie_key, movie_name in movies_list.items()[:_get_max_files()]:
+    for movie_key, movie_name in dict(itertools.islice(movies_list.items(), _get_max_files())).items():
         movie_base_placeholder = movie_name.split("#")[-1]
 
         movie_name = movie_name.split("#")[0]
@@ -417,7 +418,7 @@ def get_seasons(show: dict = None, plex_server: dict = None):
 
 
 def get_episodes(season: dict = None, plex_server: dict = None, offset: int = 0, last_season: bool = False) -> None:
-    episode_list = {}
+    episodes_list = {}
 
     query_params = {
         "X-Plex-Token": plex_server["token"],
@@ -456,15 +457,15 @@ def get_episodes(season: dict = None, plex_server: dict = None, offset: int = 0,
                     continue
 
                 episode_path = list(filter(None, episode_name.split("/")))
-                episode_list[episode_key] = "/".join(episode_path)
+                episodes_list[episode_key] = "/".join(episode_path)
 
     rkey_shows = f"pr:shows:{plex_server['node']}"
     if r.exists(rkey_shows):
         existing_episodes_list = r.hgetall(rkey_shows)
-        episode_list.update(existing_episodes_list)
+        episodes_list.update(existing_episodes_list)
 
-    if len(episode_list):
-        r.hmset(rkey_shows, episode_list)
+    if len(episodes_list):
+        r.hmset(rkey_shows, episodes_list)
         r.expire(rkey_shows, 60 * 60)
 
     if media_container["size"] + media_container["offset"] < media_container["totalSize"]:
@@ -497,13 +498,13 @@ def process_episodes(plex_server: dict = None) -> None:
     # #job = Job.fetch('my_job_id', connection=redis)
 
     shows = {}
-    episode_list = {}
+    episodes_list = {}
     rkey_shows = f"pr:shows:{plex_server['node']}"
     if r.exists(rkey_shows):
-        episode_list = r.hgetall(rkey_shows)
-    base_paths = _get_common_paths(list(episode_list.values()))
+        episodes_list = r.hgetall(rkey_shows)
+    base_paths = _get_common_paths(list(episodes_list.values()))
 
-    for episode_key, episode_name in episode_list.items()[:_get_max_files()]:
+    for episode_key, episode_name in dict(itertools.islice(episodes_list.items(), _get_max_files())).items():
         for base_path in base_paths:
             episode_name = re.sub(rf"^{base_path}", "", episode_name).lstrip("/")
         episode_path = list(filter(None, episode_name.split("/")))
