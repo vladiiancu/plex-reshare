@@ -1,4 +1,5 @@
 import datetime
+import itertools
 import json
 import os
 import random
@@ -6,7 +7,6 @@ import re
 import socket
 import string
 import time
-import itertools
 from urllib.parse import urlencode, urlparse
 
 import redis
@@ -167,6 +167,29 @@ def _set_dir_structure(d, parent=""):
             r.expire(key, REDIS_PATH_TTL)
 
 
+def _cleanup_path(path: list = None) -> list:
+    # path = list(filter(None, path.split("/")))
+    # remove paths with less than 3 chars
+    path = list(filter(lambda x: len(x) > 2, path.split("/")))
+
+    # clean paths a bit
+    path = list(
+        map(
+            lambda p: re.sub(r"(?:(.+)(\[.*\]))$", r"\1", p).strip(),  # remove [xyz] ending
+            path,
+        )
+    )
+
+    path = list(
+        map(
+            lambda p: re.sub(r"^(\[.*?\])(.*)", r"\2", p).strip(),  # remove starting [xyz]
+            path,
+        )
+    )
+
+    return path
+
+
 def get_plex_servers() -> None:
     rkey = "pr:servers"
 
@@ -296,25 +319,7 @@ def get_movies(media_container: dict = None, plex_server: dict = None) -> None:
                 if ignore_file:
                     continue
 
-                # movie_path = list(filter(None, movie_name.split("/")))
-                # remove paths with less than 3 chars
-                movie_path = list(filter(lambda x: len(x) > 2, movie_name.split("/")))
-
-                # clean paths a bit
-                movie_path = list(
-                    map(
-                        lambda p: re.sub(r"(?:(.+)(\[.*\]))$", r"\1", p).strip(),  # remove [xyz] ending
-                        movie_path,
-                    )
-                )
-
-                movie_path = list(
-                    map(
-                        lambda p: re.sub(r"^(\[.*?\])(.*)", r"\2", p).strip(),  # remove starting [xyz]
-                        movie_path,
-                    )
-                )
-
+                movie_path = _cleanup_path(path=movie_path)
                 movies_list[movie_key] = "/".join(movie_path) + f"#{movie['title']} ({movie.get('year')})".replace(
                     " (None)", ""
                 )
@@ -456,7 +461,7 @@ def get_episodes(season: dict = None, plex_server: dict = None, offset: int = 0,
                 if "anime" in episode_name.lower():
                     continue
 
-                episode_path = list(filter(None, episode_name.split("/")))
+                episode_path = _cleanup_path(path=episode_path)
                 episodes_list[episode_key] = "/".join(episode_path)
 
     rkey_shows = f"pr:shows:{plex_server['node']}"
