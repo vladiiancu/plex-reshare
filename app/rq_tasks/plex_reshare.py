@@ -20,7 +20,10 @@ REDIS_REFRESH_TTL = 3 * 60 * 60
 REDIS_PATH_TTL = 48 * 60 * 60
 IGNORE_EXTENSIONS = ["avi", None]
 IGNORE_RESOLUTIONS = ["sd", None]
-IGNORE_MOVIE_TEMPLATES = [r"^\d{2}\s.*\.\w{3,4}$"]
+IGNORE_MOVIE_TEMPLATES = [r"^\d{2}\s.*\.\w{3,4}$", r".*sample.*"]
+IGNORE_EPISODE_TEMPLATES = [r".*anime.*"]
+MOVIE_MIN_SIZE = 500
+EPISODE_MIN_SIZE = 80
 HEADERS = {
     "Accept": "application/json",
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15"
@@ -167,27 +170,26 @@ def _set_dir_structure(d, parent=""):
             r.expire(key, REDIS_PATH_TTL)
 
 
-def _cleanup_path(path: list = None) -> list:
-    # path = list(filter(None, path.split("/")))
+def _cleanup_path(path: str = None) -> str:
     # remove paths with less than 3 chars
-    path = list(filter(lambda x: len(x) > 2, path.split("/")))
+    path_segments = list(filter(lambda x: len(x) > 2, path.split("/")))
 
     # clean paths a bit
-    path = list(
+    path_segments = list(
         map(
             lambda p: re.sub(r"(?:(.+)(\[.*\]))$", r"\1", p).strip(),  # remove [xyz] ending
-            path,
+            path_segments,
         )
     )
 
-    path = list(
+    path_segments = list(
         map(
             lambda p: re.sub(r"^(\[.*?\])(.*)", r"\2", p).strip(),  # remove starting [xyz]
-            path,
+            path_segments,
         )
     )
 
-    return path
+    return "/".join(path_segments)
 
 
 def get_plex_servers() -> None:
@@ -296,33 +298,24 @@ def get_movies(media_container: dict = None, plex_server: dict = None) -> None:
 
             for part in media["Part"]:
                 movie_key = part.get("key")
-                movie_name = part.get("file")
+                movie_path = part.get("file")
 
-                if not movie_key or not movie_name:
+                if (
+                    not movie_key
+                    or not movie_path
+                    or part.get("container") in IGNORE_EXTENSIONS
+                    or part.get("size", 1) / 1000000 < MOVIE_MIN_SIZE
+                ):
                     continue
 
-                if part.get("container") in IGNORE_EXTENSIONS:
-                    continue
-
-                if part["size"] / 1000000 < 200:
-                    continue
-
-                movie_file = movie_name.split("/")[-1]
+                movie_file = movie_path.split("/")[-1]
 
                 # ignore file that match a specific name-template
-                ignore_file = False
-                for imt in IGNORE_MOVIE_TEMPLATES:
-                    if re.match(imt, movie_file, flags=re.I):
-                        ignore_file = True
-                        break
-
-                if ignore_file:
+                if any(re.match(imt, movie_file, flags=re.I) for imt in IGNORE_MOVIE_TEMPLATES):
                     continue
 
                 movie_path = _cleanup_path(path=movie_path)
-                movies_list[movie_key] = "/".join(movie_path) + f"#{movie['title']} ({movie.get('year')})".replace(
-                    " (None)", ""
-                )
+                movies_list[movie_key] = f"{movie_path}#{movie['title']} ({movie.get('year')})".replace(" (None)", "")
 
     rkey_movies = f"pr:movies:{plex_server['node']}"
     if r.exists(rkey_movies):
@@ -447,22 +440,22 @@ def get_episodes(season: dict = None, plex_server: dict = None, offset: int = 0,
 
             for part in media["Part"]:
                 episode_key = part.get("key")
-                episode_name = part.get("file")
+                episode_path = part.get("file")
 
-                if not episode_key or not episode_name:
+                if (
+                    not episode_key
+                    or not episode_path
+                    or part.get("container") in IGNORE_EXTENSIONS
+                    or part.get("size", 1) / 1000000 < EPISODE_MIN_SIZE
+                ):
                     continue
 
-                if part.get("container") in IGNORE_EXTENSIONS:
-                    continue
-
-                if part["size"] / 1000000 < 50:
-                    continue
-
-                if "anime" in episode_name.lower():
+                # ignore file that match a specific path-template
+                if any(re.match(imt, episode_path.lower(), flags=re.I) for imt in IGNORE_EPISODE_TEMPLATES):
                     continue
 
                 episode_path = _cleanup_path(path=episode_path)
-                episodes_list[episode_key] = "/".join(episode_path)
+                episodes_list[episode_key] = episode_path
 
     rkey_shows = f"pr:shows:{plex_server['node']}"
     if r.exists(rkey_shows):
@@ -498,10 +491,6 @@ def get_episodes(season: dict = None, plex_server: dict = None, offset: int = 0,
 
 
 def process_episodes(plex_server: dict = None) -> None:
-    # jobs_registry = rq.registry.ScheduledJobRegistry(queue=rq_queue)
-    # print(jobs_registry.get_jobs_to_schedule())
-    # #job = Job.fetch('my_job_id', connection=redis)
-
     shows = {}
     episodes_list = {}
     rkey_shows = f"pr:shows:{plex_server['node']}"
