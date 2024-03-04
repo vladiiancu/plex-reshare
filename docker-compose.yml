@@ -14,13 +14,6 @@ services:
     container_name: "redis"
     hostname: "redis"
     restart: "unless-stopped"
-    healthcheck:
-      disable: true
-    labels:
-      com.centurylinklabs.watchtower.enable: true
-      wud.watch: true
-      wud.watch.digest: true
-      wud.tag.include: "^\\d+\\.\\d+\\.\\d+-alpine$$"
     environment:
       TZ: "Europe/Bucharest"
     volumes: ["redis:/data"]
