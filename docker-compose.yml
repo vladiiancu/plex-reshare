@@ -39,9 +39,9 @@ services:
     # enable for development
     # volumes:
     #   - "./app:/app"
-    #   - "./nginx/nginx.conf:/usr/local/openresty/nginx/conf/nginx.conf:ro"
-    #   - "./nginx/nginx.vh.default.conf:/etc/nginx/conf.d/default.conf:ro"
-    #   - "./supervisord.conf:/etc/supervisor/conf.d/supervisord.conf"
+    #   - "./nginx.conf:/usr/local/openresty/nginx/conf/nginx.conf:ro"
+    #   - "./nginx.vh.default.conf:/etc/nginx/conf.d/default.conf:ro"
+    #   - "./supervisord_dev.conf:/etc/supervisord.conf"
     networks:
       plexreshare:
         aliases: ["plex_reshare"]

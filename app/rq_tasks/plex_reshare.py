@@ -17,7 +17,7 @@ from starlette.config import Config
 config = Config()
 PLEX_TOKEN = config("PLEX_TOKEN", cast=str, default="")
 REDIS_REFRESH_TTL = 3 * 60 * 60
-REDIS_PATH_TTL = 48 * 60 * 60
+REDIS_PATH_TTL = 24 * 60 * 60
 IGNORE_EXTENSIONS = ["avi", None]
 IGNORE_RESOLUTIONS = ["sd", None]
 IGNORE_MOVIE_TEMPLATES = [r"^\d{2}\s.*\.\w{3,4}$", r".*sample.*"]
@@ -221,7 +221,7 @@ def get_plex_servers() -> None:
         r.set(rkey_node_refresh, str(datetime.datetime.now()))
         r.expire(
             rkey_node_refresh,
-            REDIS_REFRESH_TTL + random.randint(6, 24) * 60 * 60,
+            REDIS_REFRESH_TTL + random.randint(6, 12) * 60 * 60,
         )
 
         r.set(rkey_node_ip, plex_server["ip"])
