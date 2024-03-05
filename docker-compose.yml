@@ -3,26 +3,7 @@ version: "3.9"
 
 name: "plex-reshare"
 
-volumes:
-  redis:
-    name: "redis"
-    driver: "local"
-
 services:
-  redis:
-    image: "redis:7.2.4-alpine"
-    container_name: "redis"
-    hostname: "redis"
-    restart: "unless-stopped"
-    environment:
-      TZ: "Europe/Bucharest"
-    volumes: ["redis:/data"]
-    ports:
-      - 6379:6379
-    networks:
-      plexreshare:
-        aliases: ["redis"]
-
   plex_reshare:
     image: "peterbuga/plex-reshare:latest"
     container_name: "plex_reshare"
@@ -42,12 +23,3 @@ services:
     #   - "./nginx.conf:/usr/local/openresty/nginx/conf/nginx.conf:ro"
     #   - "./nginx.vh.default.conf:/etc/nginx/conf.d/default.conf:ro"
     #   - "./supervisord_dev.conf:/etc/supervisord.conf"
-    networks:
-      plexreshare:
-        aliases: ["plex_reshare"]
-
-networks:
-  plexreshare:
-    name: "plexreshare"
-    driver: "bridge"
-    enable_ipv6: false
