@@ -46,7 +46,7 @@ if [ "$VERSION" != "latest" ]; then
 
 fi
 
-if [ "$DOCKER_PUSH" = "true" ]; then
+if [ "$DOCKER_PUSH" == true ]; then
     docker push "peterbuga/plex-reshare:${VERSION}"
     docker push "peterbuga/plex-reshare:latest"
 fi
