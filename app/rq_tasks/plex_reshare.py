@@ -340,6 +340,7 @@ def process_movies(media_container: dict = None, plex_server: dict = None) -> No
         movies_list = r.hgetall(rkey_movies)
 
     base_paths = _get_common_paths(list(movies_list.values()))
+    movies_list = dict(sorted(movies_list.items(), key=lambda x: x[1]))
 
     for movie_key, movie_name in dict(itertools.islice(movies_list.items(), _get_max_files())).items():
         movie_base_placeholder = movie_name.split("#")[-1]
@@ -496,7 +497,9 @@ def process_episodes(plex_server: dict = None) -> None:
     rkey_shows = f"pr:shows:{plex_server['node']}"
     if r.exists(rkey_shows):
         episodes_list = r.hgetall(rkey_shows)
+
     base_paths = _get_common_paths(list(episodes_list.values()))
+    episodes_list = dict(sorted(episodes_list.items(), key=lambda x: x[1]))
 
     for episode_key, episode_name in dict(itertools.islice(episodes_list.items(), _get_max_files())).items():
         for base_path in base_paths:
