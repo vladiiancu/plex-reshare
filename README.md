@@ -18,28 +18,58 @@ PS: it's not mandatory to use plex to share further the access, by same principl
 
 USE WITH CARE, **DO NOT HEAVILY REQUEST DATA FROM TARGET SERVERS**. BE NICE!
 
+It'll create a http directory listing under the format
+
+```
+/
+|-- movies
+|   |-- c0e5a2..........................
+|   |   |-- movie.libraryA.movie1
+|   |   |-- movie.libraryA.movie2
+|   |   `-- movie.libraryB.movie1
+|   |-- cb7d61..........................
+|   |-- e82c68..........................
+|   `-- f2423f..........................
+`-- shows
+    |-- c0e5a2..........................
+    |   |-- tvshow.libraryA.show1
+    |   |-- tvshow.libraryA.show2
+    |   `-- tvshow.libraryB.show1
+    |-- cb7d61..........................
+    |-- e82c68..........................
+    `-- f2423f..........................
+```
+
+All the movie/shows libraries exposed by a specific plex server will be listed all in one place under a single served id uniquely identifiable.
+As of now it's not made to recreate the structure defined by a specific plex(admin) but more like grouping all the data available and use external option like PMM (plex meta manager) to create a more structured format out of (subject to change if needed/requested, please fill an issue!).
+
 
 # Installation via Docker
 
 Docker images available https://hub.docker.com/r/peterbuga/plex-reshare
 
-Mandatory: It requires access to an external redis instance
 
-Minunim required env variables:
+Environment variables:
 
 ```
-PLEX_TOKEN: <google it>
+PLEX_TOKEN: <google it, it's mandatory>
+
+# (optional) use internal redis instance to store the files structure, using an internal refreshing system
+REDIS_INTERNAL: true(default) | false
+
+# (optional) option to use an external redis instance if already available, set `REDIS_INTERNAL: false`
+# by default it'll use redis harcoded db #11 due to a limitation to configure specific db in redis_lua
 REDIS_HOST: <ip or container (host)name>
 REDIS_PORT: 6379 (or other custom port, no auth support yet)
 REDIS_DB_RQ: 11 (redis db for rq)
 
-# limit the number of files exposed, increment by `FILES_DAY` daily.
-# this is to expose a subset of files to Plex initially and can them daily incremental
+# (optional) limit the number of files exposed, increment by `FILES_DAY` daily.
+# this is to expose a subset of files to Plex initially and can scan them daily incremental
+# not setting `DATE_START` will expose at once ALL the files it can find
+# example: (today) 2024-03-05 - (DATE_START) 2024-02-01 * (FILES_DAY) 15 = 35 (days) * 15 => max 525 files will be exposed per server-library
 DATE_START: YYYY-MM-DD
 FILES_DAY: 15
 ```
-
-By default it'll use redis db #11.
 
 
 # Rclone mount
