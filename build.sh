@@ -22,6 +22,8 @@ ENV REDIS_DB_RQ=12
 ENV REDIS_INTERNAL=true
 ENV PYTHONPATH=/app
 
+ENV DEVELOPMENT=false
+
 COPY /app/requirements.txt /tmp/requirements.txt
 
 RUN apk add --update supervisor py3-pip redis && \
