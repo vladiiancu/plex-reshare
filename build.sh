@@ -7,13 +7,15 @@ DOCKER_PUSH=${DOCKER_PUSH:-false}
 cat << EOL
 $(curl -s https://raw.githubusercontent.com/openresty/docker-openresty/master/alpine-apk/Dockerfile)
 
-# WORKERS_PER_CORE=1
-# MAX_WORKERS=40
-# WEB_CONCURRENCY=10
-# GRACEFUL_TIMEOUT=120
-# TIMEOUT: 130
-# PORT: 8000
+# starlette
+ENV WORKERS_PER_CORE=1
+ENV MAX_WORKERS=40
+ENV WEB_CONCURRENCY=10
+ENV GRACEFUL_TIMEOUT=120
+ENV TIMEOUT=130
+ENV PORT=8000
 
+# nginx + rq
 ENV REDIS_HOST=localhost
 ENV REDIS_PORT=6379
 ENV REDIS_DB_RQ=12
