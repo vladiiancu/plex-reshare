@@ -3,7 +3,6 @@ import os
 import time
 
 import redis
-import rq
 from starlette.applications import Starlette
 from starlette.config import Config
 from starlette.exceptions import HTTPException
@@ -12,6 +11,8 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.routing import Route
 from starlette.templating import Jinja2Templates
+
+import rq
 
 config = Config()
 
@@ -29,17 +30,15 @@ rq_redis = redis.Redis(
     db=config("REDIS_DB_RQ", cast=int, default=11),
 )
 rq_queue = rq.Queue(name="default", connection=rq_redis)
-LISTING_TEMPLATE = "listing.html"
+rq_retries = rq.Retry(max=3, interval=[10, 30, 120])
 
 
-class SetPlexServersMiddleware(BaseHTTPMiddleware):
+class SetRqMiddleware(BaseHTTPMiddleware):
     def __init__(self, app):
         super().__init__(app)
 
     async def dispatch(self, request, call_next):
-        rq_queue.enqueue(
-            "rq_tasks.get_plex_servers", job_id="get_plex_servers", retry=rq.Retry(max=3, interval=[10, 30, 60])
-        )
+        rq_queue.enqueue("tasks.get_plex_servers", job_id="get_plex_servers", retry=rq_retries)
 
         response = await call_next(request)
         return response
@@ -68,20 +67,18 @@ async def home(request):
             ]
         )
 
-    return templates.TemplateResponse(LISTING_TEMPLATE, context)
+    return templates.TemplateResponse("index.html", context)
 
 
 async def startup(*args, **kwargs):
     r.flushdb()
-    rq_queue.enqueue(
-        "rq_tasks.get_plex_servers", job_id="get_plex_servers", retry=rq.Retry(max=3, interval=[10, 30, 60])
-    )
+    rq_queue.enqueue("tasks.get_plex_servers", job_id="get_plex_servers", retry=rq_retries)
 
 
 routes = [
     Route("/{path:path}", home),
 ]
 
-middleware = [Middleware(SetPlexServersMiddleware)]
+middleware = [Middleware(SetRqMiddleware)]
 
 app = Starlette(debug=True, routes=routes, middleware=middleware, on_startup=[startup])

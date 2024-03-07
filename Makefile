@@ -1,12 +1,9 @@
-#!/bin/bash
+#!/usr/bin/make -f
 
-VERSION=${VERSION:-latest}
-DOCKER_PUSH=${DOCKER_PUSH:-false}
+VERSION ?= latest
+DOCKER_PUSH ?= false
 
-(
-cat << EOL
-$(curl -s https://raw.githubusercontent.com/openresty/docker-openresty/master/alpine-apk/Dockerfile)
-
+define DOCKERFILE
 # starlette
 ENV WORKERS_PER_CORE=1
 ENV MAX_WORKERS=40
@@ -27,7 +24,7 @@ ENV DEVELOPMENT=false
 COPY /app/requirements.txt /tmp/requirements.txt
 
 RUN apk add --update supervisor py3-pip redis && \
-    pip install --no-cache-dir -r /tmp/requirements.txt && \
+    pip3 install --upgrade --no-cache-dir -r /tmp/requirements.txt && \
     rm  -rf /tmp/* /var/cache/apk/*
 
 ADD https://raw.githubusercontent.com/tiangolo/uvicorn-gunicorn-docker/master/docker-images/start.sh /start.sh
@@ -37,20 +34,32 @@ ADD https://raw.githubusercontent.com/tiangolo/uvicorn-gunicorn-docker/master/do
 RUN mkdir -p /redis && chmod +x /start*.sh
 
 COPY ./app /app
+COPY ./rq /rq
 COPY supervisord.conf /etc/
 
 WORKDIR /tmp
 
 CMD ["supervisord", "--nodaemon", "--configuration", "/etc/supervisord.conf"]
-EOL
-) | docker build --no-cache -t "peterbuga/plex-reshare:${VERSION}" -f - .
+endef
+export DOCKERFILE
 
-if [ "$VERSION" != "latest" ]; then
-    docker image tag "peterbuga/plex-reshare:${VERSION}" "peterbuga/plex-reshare:latest"
+format-code:
+	ruff check --select I --fix .
+	ruff format .
 
-fi
+docker-compose:
+	@docker compose up -d --force-recreate
 
-if [ "$DOCKER_PUSH" == true ]; then
-    docker push "peterbuga/plex-reshare:${VERSION}"
-    docker push "peterbuga/plex-reshare:latest"
-fi
+build:
+	@OPENRESTY="$$(curl -s https://raw.githubusercontent.com/openresty/docker-openresty/master/alpine-apk/Dockerfile | \
+				sed -E 's/(COPY) (nginx.*)/\1 \.\/nginx\/\2/g')" && \
+				echo "$${OPENRESTY}\n$${DOCKERFILE}" | docker build --no-cache -t "peterbuga/plex-reshare:$(VERSION)" -f - .
+ifneq ($(VERSION), latest)
+	@docker image tag "peterbuga/plex-reshare:$(VERSION)" "peterbuga/plex-reshare:latest"
+endif
+ifeq ($(DOCKER_PUSH), true)
+	@docker push "peterbuga/plex-reshare:$(VERSION)"
+	@docker push "peterbuga/plex-reshare:latest"
+endif
+
+.PHONY: build

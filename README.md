@@ -1,6 +1,6 @@
 # PLEX-reshare
 
-Combo of [openresty](https://openresty.org/) + [starlette](https://www.starlette.io/) + [rq](https://python-rq.org) to expose your Plex shares in a basic web-browsable `:8080`  format a'la apache directory listing.
+Combo of [openresty](https://openresty.org/) + [starlette](https://www.starlette.io/) + [rq](https://python-rq.org) + [redis](https://redis.io/) to expose your Plex shares in a basic web-browsable `:8080`  format a'la apache directory listing.
 
 The reason behind this project it to make available your PLEX shares to other friends unrelated to the person who owns the original library.
 
