@@ -21,17 +21,18 @@ ENV PYTHONPATH=/app
 
 ENV DEVELOPMENT=false
 
-COPY /app/requirements.txt /tmp/requirements.txt
+COPY ./app/requirements.txt /tmp/requirements.txt
 
 RUN apk add --update supervisor py3-pip redis && \
-    pip3 install --upgrade --no-cache-dir -r /tmp/requirements.txt && \
-    rm  -rf /tmp/* /var/cache/apk/*
+	pip3 install --upgrade --no-cache-dir -r /tmp/requirements.txt && \
+	rm  -rf /tmp/* /var/cache/apk/*
 
 ADD https://raw.githubusercontent.com/tiangolo/uvicorn-gunicorn-docker/master/docker-images/start.sh /start.sh
 ADD https://raw.githubusercontent.com/tiangolo/uvicorn-gunicorn-docker/master/docker-images/gunicorn_conf.py /gunicorn_conf.py
 ADD https://raw.githubusercontent.com/tiangolo/uvicorn-gunicorn-docker/master/docker-images/start-reload.sh /start-reload.sh
 
-RUN mkdir -p /redis && chmod +x /start*.sh
+RUN mkdir -p /redis && \
+chmod +x /start*.sh
 
 COPY ./app /app
 COPY ./rq /rq
@@ -43,6 +44,12 @@ CMD ["supervisord", "--nodaemon", "--configuration", "/etc/supervisord.conf"]
 endef
 export DOCKERFILE
 
+define OPENRESTY
+$$(curl -s https://raw.githubusercontent.com/openresty/docker-openresty/master/alpine-apk/Dockerfile | \
+   sed -E 's/(COPY) (nginx.*)/\1 \.\/nginx\/\2/g' | grep -vE 'CMD|LABEL')
+endef
+export OPENRESTY
+
 format-code:
 	ruff check --select I --fix .
 	ruff format .
@@ -51,9 +58,7 @@ docker-compose:
 	@docker compose up -d --force-recreate
 
 build:
-	@OPENRESTY="$$(curl -s https://raw.githubusercontent.com/openresty/docker-openresty/master/alpine-apk/Dockerfile | \
-				sed -E 's/(COPY) (nginx.*)/\1 \.\/nginx\/\2/g')" && \
-				echo "$${OPENRESTY}\n$${DOCKERFILE}" | docker build --no-cache -t "peterbuga/plex-reshare:$(VERSION)" -f - .
+	@echo "$(OPENRESTY)\n$${DOCKERFILE}" | docker build --no-cache -t "peterbuga/plex-reshare:$(VERSION)" -f - .
 ifneq ($(VERSION), latest)
 	@docker image tag "peterbuga/plex-reshare:$(VERSION)" "peterbuga/plex-reshare:latest"
 endif
