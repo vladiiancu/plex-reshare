@@ -56,6 +56,13 @@ docker run -d --name=plex-reshare \
 -p 8080:8080 \
 peterbuga/plex-reshare:latest
 ```
+
+### Docker compose
+
+Copy `.env.sample` to `.env` and change the variable accordingly.
+
+`docker compose up -d`
+
 Browse to http://your-host-ip:8080 to access the list of plex reshares.
 
 ### Environment variables
