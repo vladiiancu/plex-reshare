@@ -12,7 +12,7 @@ services:
     env_file:
       - .env
     ports:
-      - 8080:8080
+      # - 8080:8080  # mapping to starlette, for debugging mostly
       - 8000:8000
     logging:
       options:

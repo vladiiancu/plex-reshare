@@ -10,7 +10,7 @@ using `plex-reshare` create a new local library with the files from `plex-server
 Basically `plex-reshare` will act as a plex-library-proxy and all the traffic will pass through it (downstream+upstream). It's ignoring self-libraries.
 
 
-### Use scenario
+# Use scenario
 
 You managed to get access to one or more shared libraries from other servers, with plex-reshare as a proxy you can host your own instance of plex and share it back to other close friends.
 
@@ -41,48 +41,53 @@ It'll create a http directory listing under the format
 ```
 
 All the movie/shows libraries exposed by a specific plex server will be listed all in one place under a single served id uniquely identifiable.
-As of now it's not made to recreate the structure defined by a specific plex(admin) but more like grouping all the data available and use external option like PMM (plex meta manager) to create a more structured format out of (subject to change if needed/requested, please fill an issue!).
+
+As of now it's not made to recreate the structure defined by a specific plex(admin) but more like grouping all the data available and use external option like PMM (Plex Meta Manager) to create a more structured format out of (subject to change if needed/requested, please fill an issue!).
 
 
 # Installation via Docker
 
 Docker images available https://hub.docker.com/r/peterbuga/plex-reshare
 
-
-Environment variables:
-
+### Sample command
 ```
-PLEX_TOKEN: <google it, it's mandatory>
-
-# (optional) use internal redis instance to store the files structure, using an internal refreshing system
-REDIS_INTERNAL: true(default) | false
-
-# (optional) option to use an external redis instance if already available, set `REDIS_INTERNAL: false`
-# by default it'll use redis harcoded db #11 due to a limitation to configure specific db in redis_lua
-REDIS_HOST: <ip or container (host)name>
-REDIS_PORT: 6379 (or other custom port, no auth support yet)
-REDIS_DB_RQ: 11 (redis db for rq)
-
-# (optional) limit the number of files exposed, increment by `FILES_DAY` daily.
-# this is to expose a subset of files to Plex initially and can scan them daily incremental
-# not setting `DATE_START` will expose at once ALL the files it can find
-# example: (today) 2024-03-05 - (DATE_START) 2024-02-01 * (FILES_DAY) 15 = 35 (days) * 15 => max 525 files will be exposed per server-library
-DATE_START: YYYY-MM-DD
-FILES_DAY: 15
+docker run -d --name=plex-reshare \
+-e PLEX_TOKEN='xxxxxxxxxxxxxxx'
+-p 8080:8080 \
+peterbuga/plex-reshare:latest
 ```
+Browse to http://your-host-ip:8080 to access the list of plex reshares.
 
+### Environment variables
+
+| Variable       | Description                                                                                                                                                                                                                                                                                                                                                                                                                                       | Default |
+| ---------------- |---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------| --------- |
+|`PLEX_TOKEN`| (mandatory) find out [how to get a plex token](https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/).                                                                                                                                                                                                                                                                                                         | (unset) |
+|`REDIS_INTERNAL`| (optional) `true` or `false` use internal redis instance to store the files structure, using an internal refreshing system                                                                                                                                                                                                                                                                                                                        | `true` |
+|`REDIS_HOST`| (optional) option to use an external redis instance if already available, set `REDIS_INTERNAL: false`                                                                                                                                                                                                                                                                                                                                             | `localhost` |
+|`REDIS_PORT`| (optional) to used when `REDIS_INTERNAL: false`                                                                                                                                                                                                                                                                                                                                                                                                   | `11` |
+|`REDIS_DB_RQ`| (optional) if python-rq should run on a separate redis db                                                                                                                                                                                                                                                                                                                                                                                         | `11` |
+|`DATE_START`| (optional) needs to be under the format `YYYY-MM-DD`. <br>limit the number of files exposed, increment by `FILES_DAY` daily. <br><br>this is to expose a subset of files to Plex initially and can scan them daily incremental. not setting `DATE_START` will expose at once **ALL** the files it can find. <br><br>example: (today) 2024-03-05 - (DATE_START) 2024-02-01 * (FILES_DAY) 15 = 35 (days) * 15 => max 525 files will be exposed per. | (unset) |
+|`FILES_DAY`| (optional) how many files increment expose every day per library                                                                                                                                                                                                                                                                                                                                                                                  | `25` |
+
+
+# Local image build
+The build image is a merge of multiple external dockerfiles (in order to kickstart the developent) that's why there's no local Dockerfile defined
+
+`make build`
 
 # Rclone mount
+More details here https://rclone.org/http/ but I recommand using flags `--transfers 4 --low-level-retries 7 --retries 7 --tpslimit 0.7 ` to limit the access to API and files, otherwise plex scan will hammer the requests on target libraries.
 
-More details here https://rclone.org/http/ but I recommand using flags `--transfers 4 --low-level-retries 7 --retries 7 --tpslimit 0.7 ` to limit the access to API and files, otherwise plex scan will hammer the requests on target libraries
+# Development
+### Linting:
+Requires `pip install ruff==0.3.0`
 
+`make format-code`
 
-### Development
+# Credits
+- https://github.com/openresty/docker-openresty
+- https://github.com/tiangolo/uvicorn-gunicorn-docker
 
-Linting: pip install ruff==0.3.0
-
-
-```
-ruff check --select I --fix .
-ruff format .
-```
+# License
+MIT license
