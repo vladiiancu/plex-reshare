@@ -156,7 +156,7 @@ def get_plex_servers() -> None:
         r.set(rkey_node_refresh, str(datetime.datetime.now()))
         r.expire(
             rkey_node_refresh,
-            random.randint(12, 24) * 60 * 60,
+            random.randint(6, 12) * random.randint(50, 60) * 60,
         )
 
         r.set(rkey_node_ip, plex_server["ip"])
