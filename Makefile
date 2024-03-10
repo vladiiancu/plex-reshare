@@ -31,7 +31,7 @@ ADD https://raw.githubusercontent.com/tiangolo/uvicorn-gunicorn-docker/master/do
 ADD https://raw.githubusercontent.com/tiangolo/uvicorn-gunicorn-docker/master/docker-images/gunicorn_conf.py /gunicorn_conf.py
 ADD https://raw.githubusercontent.com/tiangolo/uvicorn-gunicorn-docker/master/docker-images/start-reload.sh /start-reload.sh
 
-RUN mkdir -p /redis && \
+RUN mkdir -p /redis /pr && \
 chmod +x /start*.sh
 
 COPY ./app /app

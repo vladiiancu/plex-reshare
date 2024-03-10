@@ -12,14 +12,18 @@ services:
     env_file:
       - .env
     ports:
-      # - 8080:8080  # mapping to starlette, for debugging mostly
-      - 8000:8000
+      - 8080:8080
+      # - 8000:8000  # mapping to starlette, for debugging mostly
     logging:
       options:
         max-size: "5m"
-    # enable for development
-    # volumes:
-    #   - "./app:/app"
-    #   - "./nginx.conf:/usr/local/openresty/nginx/conf/nginx.conf:ro"
-    #   - "./nginx.vh.default.conf:/etc/nginx/conf.d/default.conf:ro"
-    #   - "./supervisord.conf:/etc/supervisord.conf"
+
+    volumes:
+      - "./:/pr"
+
+      # enable for development
+      # - "./app:/app"
+      # - "./rq:/rq"
+      # - "./nginx/nginx.conf:/usr/local/openresty/nginx/conf/nginx.conf:ro"
+      # - "./nginx/nginx.vh.default.conf:/etc/nginx/conf.d/default.conf:ro"
+      # - "./supervisord.conf:/etc/supervisord.conf"

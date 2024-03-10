@@ -9,6 +9,7 @@ import string
 import time
 from urllib.parse import urlencode, urlparse
 
+import pickledb
 import redis
 import requests
 from starlette.config import Config
@@ -19,6 +20,8 @@ from .utilities import DynamicAccessNestedDict, cleanup_path, get_common_paths, 
 
 config = Config()
 PLEX_TOKEN = config("PLEX_TOKEN", cast=str, default="")
+DEVELOPMENT = config("DEVELOPMENT", cast=bool, default=False)
+IGNORE_PLAYLIST = config("IGNORE_PLAYLIST", cast=str, default="")
 REDIS_REFRESH_TTL = 3 * 60 * 60
 REDIS_PATH_TTL = 24 * 60 * 60
 IGNORE_EXTENSIONS = ["avi", None]
@@ -41,6 +44,8 @@ r = redis.Redis(
 )
 rq_queue = rq.Queue(name="default", connection=redis_connection)
 rq_retries = rq.Retry(max=3, interval=[10, 30, 120])
+
+db = pickledb.load("/pr/pr.db", True)
 
 
 def _get_max_files() -> int:
@@ -73,65 +78,129 @@ def _get_servers() -> list[dict]:
     )
 
     servers = {}
-    for server in req.json():
-        if not server["owned"] and server["provides"] == "server":
-            for conn in server["connections"]:
-                if not conn["relay"] and not conn["local"] and not conn["IPv6"]:
-                    custom_access = False
-                    if "plex.direct" not in conn["uri"]:
-                        custom_access = True
+    for server in [server for server in req.json() if server["provides"] == "server"]:
+        for conn in server["connections"]:
+            if not conn["relay"] and not conn["local"] and not conn["IPv6"]:
+                custom_access = False
+                if "plex.direct" not in conn["uri"]:
+                    custom_access = True
 
-                        s = [c for c in server["connections"] if "plex.direct" in c["uri"]]
+                    s = [c for c in server["connections"] if "plex.direct" in c["uri"]]
 
-                        url = urlparse(conn["uri"])
-                        server_ip = socket.gethostbyname(url.netloc.split(":")[0])
-                        conn["uri"] = (
-                            f"{server_ip.replace('.', '-')}.{s[0]['uri'].split('.')[1]}.plex.direct:{conn['port']}"
-                        )
+                    url = urlparse(conn["uri"])
+                    server_ip = socket.gethostbyname(url.netloc.split(":")[0])
+                    conn["uri"] = (
+                        f"{server_ip.replace('.', '-')}.{s[0]['uri'].split('.')[1]}.plex.direct:{conn['port']}"
+                    )
 
-                    uri = conn["uri"].split("://")[-1]
-                    node = uri.split(".")[1]
-                    ip = uri.split(".")[0].replace("-", ".")
-                    port = conn["port"]
-                    token = server["accessToken"]
+                uri = conn["uri"].split("://")[-1]
+                node = uri.split(".")[1]
+                ip = uri.split(".")[0].replace("-", ".")
+                port = conn["port"]
+                token = server["accessToken"]
+                owned = server["owned"]
 
-                    if not servers.get(server["clientIdentifier"]) or custom_access:
-                        servers[server["clientIdentifier"]] = {
-                            "node": node,
-                            "uri": uri,
-                            "ip": ip,
-                            "port": port,
-                            "token": token,
-                        }
+                if not servers.get(server["clientIdentifier"]) or custom_access:
+                    servers[server["clientIdentifier"]] = {
+                        "node": node,
+                        "uri": uri,
+                        "ip": ip,
+                        "port": port,
+                        "token": token,
+                        "owned": owned,
+                    }
 
     return list(servers.values())
 
 
 # set dir structure in redis
 def _set_dir_structure(d, parent=""):
+    ignored_items = db.get("ignores")
+
     for k, v in d.items():
         key = f"{parent}/{k}".strip("/")
+        key_noroot = key.replace("shows/", "").replace("movies/", "").strip("/")
 
         # do not remove root folders `movies` and `shows`
         if r.exists(key) and parent:
             r.delete(key)
 
         if isinstance(v, dict):
-            if len(list(v.keys())) > 0:
-                keys = list(v.keys())
+            keys = [k for k in list(v.keys()) if f"{key_noroot}/{k}" not in ignored_items]
+
+            if len(keys) > 0:
                 r.sadd(key, *keys)
                 r.expire(key, REDIS_PATH_TTL)
             _set_dir_structure(v, parent=key)
         else:
-            r.set(key, v)
-            r.expire(key, REDIS_PATH_TTL)
+            if key_noroot not in ignored_items:
+                r.set(key, v)
+                r.expire(key, REDIS_PATH_TTL)
+
+
+def get_plex_playlists(plex_servers: list = None) -> None:
+    query_params = {
+        "playlistType": "video",
+        "includeCollections": 0,
+        "includeExternalMedia": 1,
+        "includeAdvanced": 1,
+        "includeMeta": 1,
+        "X-Plex-Client-Identifier": "".join(
+            random.choices(string.ascii_uppercase + string.ascii_lowercase + string.digits, k=24)
+        ),
+        "X-Plex-Platform-Version": "16.6",
+        "X-Plex-Token": PLEX_TOKEN,
+    }
+
+    query_params_items = {
+        "X-Plex-Container-Start": 0,
+        "X-Plex-Container-Size": 120,
+        "X-Plex-Client-Identifier": "".join(
+            random.choices(string.ascii_uppercase + string.ascii_lowercase + string.digits, k=24)
+        ),
+        "X-Plex-Platform-Version": "16.6",
+        "X-Plex-Token": PLEX_TOKEN,
+    }
+
+    ignored_items = []
+
+    for plex_server in [ps for ps in plex_servers if ps["owned"]]:
+        playlists = requests.get(
+            url=f"https://{plex_server['uri']}/playlists?{urlencode(query_params)}",
+            timeout=15,
+            headers=HEADERS,
+        )
+
+        for playlist in playlists.json()["MediaContainer"]["Metadata"]:
+            if playlist["title"] == IGNORE_PLAYLIST:
+                playlist_items = requests.get(
+                    url=f"https://{plex_server['uri']}{playlist['key']}?{urlencode(query_params_items)}",
+                    timeout=15,
+                    headers=HEADERS,
+                )
+
+                for ignore_item in playlist_items.json()["MediaContainer"]["Metadata"]:
+                    for media in ignore_item["Media"]:
+                        for part in media["Part"]:
+                            ignored_items.append(
+                                part["file"]
+                                .replace("/media/moviesextra/", "")
+                                .replace("/media/showsextra/", "")
+                                .strip("/")
+                            )
+
+                if db.exists("ignores"):
+                    existing_ignore_items = db.get("ignores")
+                    ignored_items = list(set(ignored_items + existing_ignore_items))
+
+                db.set("ignores", ignored_items)
 
 
 def get_plex_servers() -> None:
     rkey = "pr:servers"
 
     if not r.exists(rkey):
-        time.sleep(random.randint(1, 60))
+        time.sleep(random.randint(1, 20 if DEVELOPMENT else 60))
 
     if not r.exists(rkey):
         plex_servers = _get_servers()
@@ -140,10 +209,16 @@ def get_plex_servers() -> None:
         rq_queue.enqueue_in(
             datetime.timedelta(seconds=int(REDIS_REFRESH_TTL / 3 + 60)), "tasks.get_plex_servers", retry=rq_retries
         )
+
+        if IGNORE_PLAYLIST:
+            rq_queue.enqueue("tasks.get_plex_playlists", at_front=True, retry=rq_retries, plex_servers=plex_servers)
+
+        if not db.exists("ignores"):
+            db.set("ignores", [])
     else:
         plex_servers = json.loads(r.get(rkey))
 
-    for plex_server in plex_servers:
+    for plex_server in [ps for ps in plex_servers if not ps["owned"]]:
         rkey_node_refresh = f"pr:node:{plex_server['node']}:refresh"
         rkey_node_ip = f"pr:node:{plex_server['node']}:ip"
         rkey_node_port = f"pr:node:{plex_server['node']}:port"
@@ -276,8 +351,9 @@ def process_movies(media_container: dict = None, plex_server: dict = None) -> No
 
     base_paths = get_common_paths(list(movies_list.values()))
     movies_list = dict(sorted(movies_list.items(), key=lambda x: x[1]))
+    movies_list = dict(itertools.islice(movies_list.items(), _get_max_files())).items()
 
-    for movie_key, movie_name in dict(itertools.islice(movies_list.items(), _get_max_files())).items():
+    for movie_key, movie_name in movies_list:
         movie_base_placeholder = movie_name.split("#")[-1]
 
         movie_name = movie_name.split("#")[0]
@@ -341,9 +417,9 @@ def get_seasons(show: dict = None, plex_server: dict = None):
 
     seasons_metadata = seasons.json()["MediaContainer"]["Metadata"]
     for sid, season in enumerate(seasons_metadata):
-        # rq_queue.enqueue_in(
-        #     datetime.timedelta(seconds=sid * 2),
-        rq_queue.enqueue(
+        # rq_queue.enqueue(
+        rq_queue.enqueue_in(
+            datetime.timedelta(seconds=sid * 10),
             "tasks.get_episodes",
             retry=rq_retries,
             at_front=True,
@@ -435,8 +511,9 @@ def process_episodes(plex_server: dict = None) -> None:
 
     base_paths = get_common_paths(list(episodes_list.values()))
     episodes_list = dict(sorted(episodes_list.items(), key=lambda x: x[1]))
+    episodes_list = dict(itertools.islice(episodes_list.items(), _get_max_files())).items()
 
-    for episode_key, episode_name in dict(itertools.islice(episodes_list.items(), _get_max_files())).items():
+    for episode_key, episode_name in episodes_list:
         for base_path in base_paths:
             episode_name = re.sub(rf"^{base_path}", "", episode_name).lstrip("/")
         episode_path = list(filter(None, episode_name.split("/")))
