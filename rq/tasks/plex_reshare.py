@@ -45,7 +45,9 @@ r = redis.Redis(
 rq_queue = rq.Queue(name="default", connection=redis_connection)
 rq_retries = rq.Retry(max=3, interval=[10, 30, 120])
 
-db = pickledb.load("/pr/pr.db", True)
+
+def _get_pickledb(autodump: bool = True):
+    return pickledb.load("/pr/pr.db", autodump)
 
 
 def _get_max_files() -> int:
@@ -115,7 +117,8 @@ def _get_servers() -> list[dict]:
 
 # set dir structure in redis
 def _set_dir_structure(d, parent=""):
-    ignored_items = db.get("ignores")
+    db = _get_pickledb(autodump=False)
+    ignored_items = db.get("ignores") or []
 
     for k, v in d.items():
         key = f"{parent}/{k}".strip("/")
@@ -139,6 +142,8 @@ def _set_dir_structure(d, parent=""):
 
 
 def get_plex_playlists(plex_servers: list = None) -> None:
+    db = _get_pickledb(autodump=True)
+
     query_params = {
         "playlistType": "video",
         "includeCollections": 0,
@@ -197,6 +202,7 @@ def get_plex_playlists(plex_servers: list = None) -> None:
 
 
 def get_plex_servers() -> None:
+    db = _get_pickledb(autodump=True)
     rkey = "pr:servers"
 
     if not r.exists(rkey):
