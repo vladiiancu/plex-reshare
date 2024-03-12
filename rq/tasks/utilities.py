@@ -10,26 +10,6 @@ redis_connection = redis.Redis(
 )
 
 
-class DynamicAccessNestedDict:
-    """Dynamically get/set nested dictionary keys of 'data' dict"""
-
-    def __init__(self, data: dict):
-        self.data = data
-
-    def getval(self, keys: list):
-        data = self.data
-        for k in keys:
-            data = data[k]
-        return data
-
-    def setval(self, keys: list, val) -> None:
-        data = self.data
-        lastkey = keys[-1]
-        for k in keys[:-1]:  # when assigning drill down to *second* last key
-            data = data[k]
-        data[lastkey] = val
-
-
 def get_common_paths(paths: list) -> list:
     common_paths = {}
 

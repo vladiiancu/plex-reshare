@@ -16,7 +16,7 @@ from starlette.config import Config
 
 import rq
 
-from .utilities import DynamicAccessNestedDict, cleanup_path, get_common_paths, redis_connection
+from .utilities import cleanup_path, get_common_paths, redis_connection
 
 config = Config()
 PLEX_TOKEN = config("PLEX_TOKEN", cast=str, default="")
@@ -26,7 +26,7 @@ REDIS_REFRESH_TTL = 3 * 60 * 60
 REDIS_PATH_TTL = 24 * 60 * 60
 IGNORE_EXTENSIONS = ["avi", None]
 IGNORE_RESOLUTIONS = ["sd", None]
-IGNORE_MOVIE_TEMPLATES = [r"^\d{2}\s.*\.\w{3,4}$", r".*sample.*"]
+IGNORE_MOVIE_TEMPLATES = [r".*sample.*"]  # r"^\d{2}\s.*\.\w{3,4}$",
 IGNORE_EPISODE_TEMPLATES = [r".*anime.*"]
 MOVIE_MIN_SIZE = 500
 EPISODE_MIN_SIZE = 80
@@ -113,32 +113,6 @@ def _get_servers() -> list[dict]:
                     }
 
     return list(servers.values())
-
-
-# set dir structure in redis
-def _set_dir_structure(d, parent=""):
-    db = _get_pickledb(autodump=False)
-    ignored_items = db.get("ignores") or []
-
-    for k, v in d.items():
-        key = f"{parent}/{k}".strip("/")
-        key_noroot = key.replace("shows/", "").replace("movies/", "").strip("/")
-
-        # do not remove root folders `movies` and `shows`
-        if r.exists(key) and parent:
-            r.delete(key)
-
-        if isinstance(v, dict):
-            keys = [k for k in list(v.keys()) if f"{key_noroot}/{k}" not in ignored_items]
-
-            if len(keys) > 0:
-                r.sadd(key, *keys)
-                r.expire(key, REDIS_PATH_TTL)
-            _set_dir_structure(v, parent=key)
-        else:
-            if key_noroot not in ignored_items:
-                r.set(key, v)
-                r.expire(key, REDIS_PATH_TTL)
 
 
 def get_plex_playlists(plex_servers: list = None) -> None:
@@ -331,7 +305,9 @@ def get_movies(media_container: dict = None, plex_server: dict = None) -> None:
                     continue
 
                 movie_path = cleanup_path(path=movie_path)
-                movies_list[movie_key] = f"{movie_path}#{movie['title']} ({movie.get('year')})".replace(" (None)", "")
+                movies_list[movie_key] = f"{movie_path}###{movie['title']} ({movie.get('year')})".replace(
+                    " (None)", ""
+                )
 
     rkey_movies = f"pr:movies:{plex_server['node']}"
     if r.exists(rkey_movies):
@@ -343,52 +319,14 @@ def get_movies(media_container: dict = None, plex_server: dict = None) -> None:
         r.expire(rkey_movies, 60 * 60)
 
     rq_queue.enqueue_in(
-        datetime.timedelta(seconds=5), "tasks.process_movies", retry=rq_retries, kwargs={"plex_server": plex_server}
+        datetime.timedelta(seconds=5),
+        "tasks.process_media",
+        retry=rq_retries,
+        kwargs={
+            "plex_server": plex_server,
+            "media_type": "movies",
+        },
     )
-
-
-def process_movies(media_container: dict = None, plex_server: dict = None) -> None:
-    movies = {}
-    movies_list = {}
-
-    rkey_movies = f"pr:movies:{plex_server['node']}"
-    if r.exists(rkey_movies):
-        movies_list = r.hgetall(rkey_movies)
-
-    base_paths = get_common_paths(list(movies_list.values()))
-    movies_list = dict(sorted(movies_list.items(), key=lambda x: x[1]))
-    movies_list = dict(itertools.islice(movies_list.items(), _get_max_files())).items()
-
-    for movie_key, movie_name in movies_list:
-        movie_base_placeholder = movie_name.split("#")[-1]
-
-        movie_name = movie_name.split("#")[0]
-
-        for base_path in base_paths:
-            movie_name = re.sub(rf"^{base_path}", "", movie_name).lstrip("/")
-
-        movie_path = list(filter(None, movie_name.split("/")))
-        movie_file = movie_path[-1]
-
-        # add parent folder for root files
-        if len(movie_path) == 1:
-            movie_path = [movie_base_placeholder] + movie_path
-
-        node = movies
-        for idx, level in enumerate(movie_path):
-            if idx < len(movie_path) - 1:
-                node = node.setdefault(level, dict())
-            else:
-                d_files = DynamicAccessNestedDict(movies).getval(movie_path[:-1])
-
-                if d_files:
-                    d_files.update({movie_file: movie_key})
-                else:
-                    d_files = {movie_file: movie_key}
-
-                DynamicAccessNestedDict(movies).setval(movie_path[:-1], d_files)
-
-    _set_dir_structure({"movies": {plex_server["node"]: movies}}, parent="")
 
 
 def get_shows(media_container: dict = None, plex_server: dict = None) -> None:
@@ -500,48 +438,40 @@ def get_episodes(season: dict = None, plex_server: dict = None, offset: int = 0,
     if last_season:
         rq_queue.enqueue_in(
             datetime.timedelta(seconds=random.randint(5, 120)),
-            "tasks.process_episodes",
+            "tasks.process_media",
             retry=rq_retries,
             kwargs={
                 "plex_server": plex_server,
+                "media_type": "shows",
             },
         )
 
 
-def process_episodes(plex_server: dict = None) -> None:
-    shows = {}
-    episodes_list = {}
-    rkey_shows = f"pr:shows:{plex_server['node']}"
-    if r.exists(rkey_shows):
-        episodes_list = r.hgetall(rkey_shows)
+def process_media(plex_server: dict = None, media_type: str = None):
+    medias_list = {}
 
-    base_paths = get_common_paths(list(episodes_list.values()))
-    episodes_list = dict(sorted(episodes_list.items(), key=lambda x: x[1]))
-    episodes_list = dict(itertools.islice(episodes_list.items(), _get_max_files())).items()
+    rkey_medias = f"pr:{media_type}:{plex_server['node']}"
+    if r.exists(rkey_medias):
+        medias_list = r.hgetall(rkey_medias)
 
-    for episode_key, episode_name in episodes_list:
+    base_paths = get_common_paths(list(medias_list.values()))
+    medias_list = dict(sorted(medias_list.items(), key=lambda x: x[1]))
+    medias_list = dict(itertools.islice(medias_list.items(), _get_max_files())).items()
+
+    pipe = r.pipeline()
+    for media_key, media_path in medias_list:
         for base_path in base_paths:
-            episode_name = re.sub(rf"^{base_path}", "", episode_name).lstrip("/")
-        episode_path = list(filter(None, episode_name.split("/")))
+            media_path = re.sub(rf"^{base_path}", "", media_path).lstrip("/")
 
-        # no root file or 1st ones
-        if len(episode_path) <= 1:
-            continue
+        if "###" in media_path:
+            media_path, media_base_placeholder = media_path.split("###")
+            media_path_chunks = list(filter(None, media_path.split("/")))
 
-        episode_file = episode_path[-1]
+            # add parent folder for root files
+            if len(media_path_chunks) == 1:
+                media_path = f"{media_base_placeholder}/{media_path}"
 
-        node = shows
-        for idx, level in enumerate(episode_path):
-            if idx < len(episode_path) - 1:
-                node = node.setdefault(level, dict())
-            else:
-                d_files = DynamicAccessNestedDict(shows).getval(episode_path[:-1])
-
-                if d_files:
-                    d_files.update({episode_file: episode_key})
-                else:
-                    d_files = {episode_file: episode_key}
-
-                DynamicAccessNestedDict(shows).setval(episode_path[:-1], d_files)
-
-    _set_dir_structure({"shows": {plex_server["node"]: shows}}, parent="")
+        media_path = f"pr:files:{media_type}/{plex_server['node']}/{media_path}"
+        r.set(media_path, media_key)
+        r.expire(media_path, REDIS_PATH_TTL)
+    pipe.execute()

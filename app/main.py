@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import time
 
 import redis
@@ -47,25 +48,20 @@ class SetRqMiddleware(BaseHTTPMiddleware):
 async def home(request):
     context = {"request": request, "paths": []}
     location = request.path_params.get("path").strip("/")
+    entries = list(r.scan_iter(f"pr:files:{location}*"))
 
-    if not len(location):  # root path
-        context["paths"] = [
-            {"url": "/shows/", "name": "shows"},
-            {"url": "/movies/", "name": "movies"},
-        ]
+    paths = {}
+    for entry in entries:
+        entry = entry.replace(f"pr:files:{location}", "").strip("/")
+        entry_chunks = entry.split("/")
 
-    else:
-        entries = list(r.smembers(location))
-        entries.sort()
-        context["paths"].extend(
-            [
-                {
-                    "url": f"/{location}/{e}{'/' if r.type(f'{location}/{e}') == 'set' else ''}",
-                    "name": e,
-                }
-                for e in entries
-            ]
-        )
+        paths[entry_chunks[0]] = {
+            "url": (f"/{location}/{entry_chunks[0]}" + ("/" if len(entry_chunks) > 1 else "")).replace("//", "/"),
+            "name": entry_chunks[0] + ("/" if len(entry_chunks) > 1 else ""),
+        }
+
+    paths = dict(sorted(paths.items()))
+    context["paths"].extend(paths.values())
 
     return templates.TemplateResponse("index.html", context)
 
