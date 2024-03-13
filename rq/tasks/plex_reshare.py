@@ -486,7 +486,7 @@ def process_media(plex_server: dict = None, media_type: str = None):
         media_path = f"pr:files:{media_type}/{plex_server['node']}/{media_path}"
         medias[media_key] = media_path
 
-    delete_keys = [x for x in delete_keys if x not in set(list(medias.keys()))]
+    delete_keys = [x for x in delete_keys if x not in set(list(medias.values()))]
 
     pipe = r.pipeline()
     if len(delete_keys) > 1:
