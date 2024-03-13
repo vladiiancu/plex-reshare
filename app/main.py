@@ -48,7 +48,8 @@ class SetRqMiddleware(BaseHTTPMiddleware):
 async def home(request):
     context = {"request": request, "paths": []}
     location = request.path_params.get("path").strip("/")
-    entries = list(r.scan_iter(f"pr:files:{location}*"))
+    location_esc = ''.join([(c if re.match(r"[a-zA-Z0-9\.\\]", c) else ("\\" + c)) for c in location])
+    entries = list(r.scan_iter(f"pr:files:{location_esc}*"))
 
     paths = {}
     for entry in entries:
@@ -60,7 +61,7 @@ async def home(request):
             "name": entry_chunks[0] + ("/" if len(entry_chunks) > 1 else ""),
         }
 
-    paths = dict(sorted(paths.items()))
+    paths = dict(sorted(paths.items(), key=lambda x: x[0].lower()))
     context["paths"].extend(paths.values())
 
     return templates.TemplateResponse("index.html", context)

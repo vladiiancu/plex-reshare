@@ -319,7 +319,7 @@ def get_movies(media_container: dict = None, plex_server: dict = None) -> None:
         r.expire(rkey_movies, 60 * 60)
 
     rq_queue.enqueue_in(
-        datetime.timedelta(seconds=5),
+        datetime.timedelta(seconds=random.randint(10, 60)),
         "tasks.process_media",
         retry=rq_retries,
         kwargs={
@@ -340,11 +340,13 @@ def get_shows(media_container: dict = None, plex_server: dict = None) -> None:
             kwargs={
                 "show": show,
                 "plex_server": plex_server,
+                "show_count": sid,
             },
         )
 
 
-def get_seasons(show: dict = None, plex_server: dict = None):
+def get_seasons(show: dict = None, plex_server: dict = None, show_count: int = 0):
+    time.sleep(0.2)
     query_params = {
         "X-Plex-Token": plex_server["token"],
         "X-Plex-Container-Start": 0,
@@ -363,10 +365,10 @@ def get_seasons(show: dict = None, plex_server: dict = None):
     for sid, season in enumerate(seasons_metadata):
         # rq_queue.enqueue(
         rq_queue.enqueue_in(
-            datetime.timedelta(seconds=sid * 10),
+            datetime.timedelta(seconds=sid * 10 + show_count),
             "tasks.get_episodes",
             retry=rq_retries,
-            at_front=True,
+            # at_front=True,
             kwargs={"season": season, "plex_server": plex_server, "last_season": sid + 1 == len(seasons_metadata)},
         )
 
@@ -448,7 +450,10 @@ def get_episodes(season: dict = None, plex_server: dict = None, offset: int = 0,
 
 
 def process_media(plex_server: dict = None, media_type: str = None):
+    time.sleep(0.5)
     medias_list = {}
+    db = _get_pickledb(autodump=False)
+    ignored_items = db.get("ignores") or []
 
     rkey_medias = f"pr:{media_type}:{plex_server['node']}"
     if r.exists(rkey_medias):
@@ -458,10 +463,13 @@ def process_media(plex_server: dict = None, media_type: str = None):
     medias_list = dict(sorted(medias_list.items(), key=lambda x: x[1]))
     medias_list = dict(itertools.islice(medias_list.items(), _get_max_files())).items()
 
-    pipe = r.pipeline()
+    delete_keys = list(r.scan_iter(f"pr:files:{media_type}/{plex_server['node']}*"))
+    medias = {}
+
     for media_key, media_path in medias_list:
         for base_path in base_paths:
-            media_path = re.sub(rf"^{base_path}", "", media_path).lstrip("/")
+            # media_path = re.sub(rf"^{base_path}/", "", media_path).lstrip("/")
+            media_path = re.sub(rf"{base_path}/", "", media_path).lstrip("/")
 
         if "###" in media_path:
             media_path, media_base_placeholder = media_path.split("###")
@@ -471,7 +479,20 @@ def process_media(plex_server: dict = None, media_type: str = None):
             if len(media_path_chunks) == 1:
                 media_path = f"{media_base_placeholder}/{media_path}"
 
+        exclude_key = f"{plex_server['node']}/{media_path}"
+        if exclude_key in ignored_items:
+            continue
+
         media_path = f"pr:files:{media_type}/{plex_server['node']}/{media_path}"
+        medias[media_key] = media_path
+
+    delete_keys = [x for x in delete_keys if x not in set(list(medias.keys()))]
+
+    pipe = r.pipeline()
+    if len(delete_keys) > 1:
+        r.delete(*delete_keys)
+
+    for media_key, media_path in medias.items():
         r.set(media_path, media_key)
         r.expire(media_path, REDIS_PATH_TTL)
     pipe.execute()
