@@ -24,12 +24,12 @@ DEVELOPMENT = config("DEVELOPMENT", cast=bool, default=False)
 IGNORE_PLAYLIST = config("IGNORE_PLAYLIST", cast=str, default="")
 REDIS_REFRESH_TTL = 3 * 60 * 60
 REDIS_PATH_TTL = 24 * 60 * 60
-IGNORE_EXTENSIONS = ["avi", None]
-IGNORE_RESOLUTIONS = ["sd", None]
-IGNORE_MOVIE_TEMPLATES = [r".*sample.*"]  # r"^\d{2}\s.*\.\w{3,4}$",
-IGNORE_EPISODE_TEMPLATES = [r".*anime.*"]
-MOVIE_MIN_SIZE = 500
-EPISODE_MIN_SIZE = 80
+IGNORE_EXTENSIONS = config("IGNORE_EXTENSIONS", cast=str, default="").split(',') + [None]
+IGNORE_RESOLUTIONS = config("IGNORE_RESOLUTIONS", cast=str, default="").split(',') + [None]
+IGNORE_MOVIE_TEMPLATES = config("IGNORE_MOVIE_TEMPLATES", cast=str, default="").split('|')
+IGNORE_EPISODE_TEMPLATES = config("IGNORE_EPISODE_TEMPLATES", cast=str, default="").split('|')
+MOVIE_MIN_SIZE = config("MOVIE_MIN_SIZE", cast=int, default=512)
+EPISODE_MIN_SIZE = config("EPISODE_MIN_SIZE", cast=int, default=64)
 HEADERS = {
     "Accept": "application/json",
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15"
@@ -301,7 +301,7 @@ def get_movies(media_container: dict = None, plex_server: dict = None) -> None:
                 movie_file = movie_path.split("/")[-1]
 
                 # ignore file that match a specific name-template
-                if any(re.match(imt, movie_file, flags=re.I) for imt in IGNORE_MOVIE_TEMPLATES):
+                if any(re.match(rf"{imt}", movie_file, flags=re.I) for imt in IGNORE_MOVIE_TEMPLATES):
                     continue
 
                 movie_path = cleanup_path(path=movie_path)
@@ -409,7 +409,7 @@ def get_episodes(season: dict = None, plex_server: dict = None, offset: int = 0,
                     continue
 
                 # ignore file that match a specific path-template
-                if any(re.match(imt, episode_path.lower(), flags=re.I) for imt in IGNORE_EPISODE_TEMPLATES):
+                if any(re.match(rf"{imt}", episode_path.lower(), flags=re.I) for imt in IGNORE_EPISODE_TEMPLATES):
                     continue
 
                 episode_path = cleanup_path(path=episode_path)

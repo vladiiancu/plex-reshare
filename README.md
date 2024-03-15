@@ -77,6 +77,12 @@ Browse to http://your-host-ip:8080 to access the list of plex reshares.
 |`DATE_START`| (optional) needs to be under the format `YYYY-MM-DD`. <br>limit the number of files exposed, increment by `FILES_DAY` daily. <br><br>this is to expose a subset of files to Plex initially and can scan them daily incremental. not setting `DATE_START` will expose at once **ALL** the files it can find. <br><br>example: (today) 2024-03-05 - (DATE_START) 2024-02-01 * (FILES_DAY) 15 = 35 (days) * 15 => max 525 files will be exposed per library (either `movie` or `show` library type). | (unset) |
 |`FILES_DAY`| (optional) how many files increment expose every day per library                                                                                                                                                                                                                                                                                                                                                                                  | `25` |
 |`IGNORE_PLAYLIST`| (optional) generate a playlist, add items to it that you don't want to see in you library and they will slowly go away as the new refresh & trash process takes place                                                                                                                                                                                                                                                                                                                                                                                  | (unset) |
+|`IGNORE_RESOLUTIONS`| (optional) list of resolutions comma separated that you'd like to ignore, ex: `sd` | (unset) |
+|`IGNORE_EXTENSIONS`| (optional) list of file extension comma separated that you'd like to ignore, ex: `avi,mpeg` | (unset) |
+|`MOVIE_MIN_SIZE`| (optional) minimal file size of a movie in Mb, everything below will be ignored | 512 |
+|`EPISODE_MIN_SIZE`| (optional)  minimal file size of an episode in Mb, everything below will be ignored | 64 |
+|`IGNORE_MOVIE_TEMPLATES`| (optional) list of python regexes to ignore being added to the list, pipe (`\|`) separated, ex: `.*sample.*` will ignore all the sample file sometimes associated with movie files | (unset) |
+|`IGNORE_EPISODE_TEMPLATES`| (optional) list of python regexes to ignore being added to the list, pipe (`\|`) separated | (unset) |
 
 
 # Local image build
