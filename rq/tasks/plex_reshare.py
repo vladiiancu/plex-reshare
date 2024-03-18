@@ -26,8 +26,8 @@ REDIS_REFRESH_TTL = 3 * 60 * 60
 REDIS_PATH_TTL = 24 * 60 * 60
 IGNORE_EXTENSIONS = config("IGNORE_EXTENSIONS", cast=str, default="").split(',') + [None]
 IGNORE_RESOLUTIONS = config("IGNORE_RESOLUTIONS", cast=str, default="").split(',') + [None]
-IGNORE_MOVIE_TEMPLATES = config("IGNORE_MOVIE_TEMPLATES", cast=str, default="").split('|')
-IGNORE_EPISODE_TEMPLATES = config("IGNORE_EPISODE_TEMPLATES", cast=str, default="").split('|')
+IGNORE_MOVIE_TEMPLATES = [i for i in config("IGNORE_MOVIE_TEMPLATES", cast=str, default="").split('|') if i]
+IGNORE_EPISODE_TEMPLATES = [i for i in config("IGNORE_EPISODE_TEMPLATES", cast=str, default="").split('|') if i]
 MOVIE_MIN_SIZE = config("MOVIE_MIN_SIZE", cast=int, default=512)
 EPISODE_MIN_SIZE = config("EPISODE_MIN_SIZE", cast=int, default=64)
 HEADERS = {
