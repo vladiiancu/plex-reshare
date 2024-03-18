@@ -22,6 +22,12 @@ services:
     volumes:
       - "./:/pr"
 
+    deploy:
+      resources:
+        limits:
+          cpus: 0.50
+          memory: 2g
+
       # enable for development
       # - "./app:/app"
       # - "./rq:/rq"
